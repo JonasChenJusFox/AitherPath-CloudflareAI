@@ -4,6 +4,7 @@ dist/
 .local-backup/
 .dev.vars
 .env
+.env.example
 .env.local
 npm-debug.log*
 *.local

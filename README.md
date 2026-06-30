@@ -2,7 +2,7 @@
 
 A beginner-friendly TypeScript backend for an AI assistant portfolio project.
 
-Week 1 focuses on a clean Cloudflare Workers foundation: API design, project structure, local development, and deployment readiness.
+Week 1 focuses on TypeScript, Cloudflare Workers, Hono routing, HTTP basics, deployment, secrets, and a small job search integration.
 
 ## Tech Stack
 
@@ -22,9 +22,12 @@ Week 1 focuses on a clean Cloudflare Workers foundation: API design, project str
 │   ├── routes/
 │   │   ├── health.ts
 │   │   ├── hello.ts
-│   │   └── chat.ts
+│   │   ├── chat.ts
+│   │   └── jobs.ts
 │   ├── middleware/
 │   │   └── logger.ts
+│   ├── services/
+│   │   └── jobSearch.ts
 │   ├── types/
 │   │   └── app.ts
 │   └── utils/
@@ -35,8 +38,7 @@ Week 1 focuses on a clean Cloudflare Workers foundation: API design, project str
 ├── package.json
 ├── tsconfig.json
 ├── wrangler.jsonc
-├── .gitignore
-└── .env.example
+└── .gitignore
 ```
 
 ## Install Dependencies
@@ -72,6 +74,35 @@ Deploy:
 ```bash
 npm run deploy
 ```
+
+## Secrets
+
+Job search uses the `JOOBLE_API_KEY` secret. Do not commit API keys.
+
+For local development, create a local `.dev.vars` file:
+
+```text
+JOOBLE_API_KEY=your_jooble_api_key_here
+```
+
+For production, store the key in Cloudflare:
+
+```bash
+npx wrangler secret put JOOBLE_API_KEY
+```
+
+Do not commit local `.env`, `.dev.vars`, or `.env.example` files.
+
+## Week 1 Study Notes
+
+- ReAct is the paper reference for future agent design: reason about the next step, act with a tool, observe the result, and repeat.
+- The Cloudflare Agents Starter template is useful to study locally:
+
+```bash
+npx create-cloudflare@latest --template cloudflare/agents-starter
+```
+
+This repository keeps Week 1 smaller: a Worker API, simple routes, middleware, deployment setup, and one job-search tool endpoint.
 
 ## API Endpoints
 
@@ -125,7 +156,7 @@ Example response:
 
 ### POST /chat
 
-Echoes the message for Week 1.
+Echoes a normal message for Week 1.
 
 ```bash
 curl -X POST http://localhost:8787/chat \
@@ -139,6 +170,14 @@ Example response:
 {
   "reply": "You said: hello"
 }
+```
+
+You can also search jobs through the chat route:
+
+```bash
+curl -X POST http://localhost:8787/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"jobs frontend engineer in New York"}'
 ```
 
 Invalid input returns a 400 response:
@@ -156,6 +195,33 @@ Example response:
   "error": "Message is required and must be a non-empty string."
 }
 ```
+
+### POST /jobs
+
+Searches jobs with the configured Jooble API key.
+
+```bash
+curl -X POST http://localhost:8787/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"keywords":"frontend engineer","location":"New York"}'
+```
+
+Example response:
+
+```json
+{
+  "jobs": [
+    {
+      "title": "Frontend Engineer",
+      "company": "Example Company",
+      "location": "New York",
+      "link": "https://example.com/job"
+    }
+  ]
+}
+```
+
+If `JOOBLE_API_KEY` is missing, the endpoint returns a 503 setup error.
 
 ## Commands From Zero
 
@@ -201,6 +267,9 @@ curl -X POST http://localhost:8787/chat \
 curl -X POST http://localhost:8787/chat \
   -H "Content-Type: application/json" \
   -d '{}'
+curl -X POST http://localhost:8787/jobs \
+  -H "Content-Type: application/json" \
+  -d '{"keywords":"frontend engineer","location":"New York"}'
 ```
 
 You can also open `http://localhost:8787` in a browser and test the chat form.
@@ -212,8 +281,9 @@ You can also open `http://localhost:8787` in a browser and test the chat form.
 - [x] Health endpoint
 - [x] Hello endpoint
 - [x] Chat endpoint with validation
+- [x] Job search endpoint using a Cloudflare secret
 - [x] Logging middleware
 - [x] Global error handler
 - [x] Simple frontend test page
 - [x] Wrangler configuration
-- [x] Environment variable example file
+- [x] Basic Cloudflare deployment and secrets notes

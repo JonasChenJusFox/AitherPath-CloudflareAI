@@ -98,10 +98,20 @@
       <h1>Cloudflare AI Assistant Agent</h1>
       <p>Week 1 foundation: a Cloudflare Workers API with a simple chat test page.</p>
 
+      <!-- This small form calls the Worker POST /chat route during local testing. -->
       <form id="chat-form">
         <label for="message">Message</label>
         <textarea id="message" name="message" placeholder="Type a message to test /chat">hello</textarea>
         <button type="submit">Send</button>
+      </form>
+
+      <!-- The job form checks the Week 1 external API integration. -->
+      <form id="job-form">
+        <label for="keywords">Job keywords</label>
+        <textarea id="keywords" name="keywords" placeholder="frontend engineer">frontend engineer</textarea>
+        <label for="location">Location</label>
+        <textarea id="location" name="location" placeholder="New York">New York</textarea>
+        <button type="submit">Search Jobs</button>
       </form>
 
       <pre id="response" aria-live="polite">Response will appear here.</pre>
@@ -109,9 +119,13 @@
 
     <script>
       const form = document.querySelector("#chat-form");
+      const jobForm = document.querySelector("#job-form");
       const messageInput = document.querySelector("#message");
+      const keywordsInput = document.querySelector("#keywords");
+      const locationInput = document.querySelector("#location");
       const responseOutput = document.querySelector("#response");
       const button = form.querySelector("button");
+      const jobButton = jobForm.querySelector("button");
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -120,6 +134,7 @@
         responseOutput.textContent = "Sending...";
 
         try {
+          // Keep the browser test close to the curl example in the README.
           const response = await fetch("/chat", {
             method: "POST",
             headers: {
@@ -136,6 +151,33 @@
           responseOutput.textContent = "Request failed. Make sure the Worker is running locally.";
         } finally {
           button.disabled = false;
+        }
+      });
+
+      jobForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        jobButton.disabled = true;
+        responseOutput.textContent = "Searching...";
+
+        try {
+          const response = await fetch("/jobs", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              keywords: keywordsInput.value,
+              location: locationInput.value
+            })
+          });
+
+          const data = await response.json();
+          responseOutput.textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+          responseOutput.textContent = "Request failed. Check the Worker and JOOBLE_API_KEY setup.";
+        } finally {
+          jobButton.disabled = false;
         }
       });
     </script>
