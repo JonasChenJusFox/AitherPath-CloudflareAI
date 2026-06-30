@@ -1,5 +1,7 @@
 # Cloudflare AI Assistant Agent
 
+[![CI](https://github.com/JonasChenJusFox/AitherPath-CloudflareAI/actions/workflows/ci.yml/badge.svg)](https://github.com/JonasChenJusFox/AitherPath-CloudflareAI/actions/workflows/ci.yml)
+
 A beginner-friendly TypeScript backend for an AI assistant portfolio project.
 
 Week 1 focuses on TypeScript, Cloudflare Workers, Hono routing, HTTP basics, deployment, secrets, and a small job search integration.
