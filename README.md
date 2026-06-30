@@ -273,17 +273,3 @@ curl -X POST http://localhost:8787/jobs \
 ```
 
 You can also open `http://localhost:8787` in a browser and test the chat form.
-
-## Week 1 Completion Checklist
-
-- [x] TypeScript Cloudflare Workers project structure
-- [x] Hono routing setup
-- [x] Health endpoint
-- [x] Hello endpoint
-- [x] Chat endpoint with validation
-- [x] Job search endpoint using a Cloudflare secret
-- [x] Logging middleware
-- [x] Global error handler
-- [x] Simple frontend test page
-- [x] Wrangler configuration
-- [x] Basic Cloudflare deployment and secrets notes
