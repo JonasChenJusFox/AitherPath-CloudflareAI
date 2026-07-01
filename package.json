@@ -1,20 +1,61 @@
 {
-  "name": "cloudflare-ai-assistant",
-  "version": "0.1.0",
+  "name": "workinghelper-agent",
+  "version": "1.0.0",
   "private": true,
-  "description": "Week 1 foundation for a Cloudflare Workers AI assistant portfolio project.",
+  "description": "WorkingHelper AI job search agent built on Cloudflare Workers",
+  "keywords": [
+    "agents",
+    "ai",
+    "cloudflare",
+    "job-search"
+  ],
+  "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "dev": "vite dev",
+    "start": "vite dev",
+    "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
+    "types": "wrangler types env.d.ts --include-runtime false",
+    "format": "oxfmt --write .",
+    "lint": "oxlint src/",
+    "check": "oxfmt --check . && oxlint src/ && tsc"
   },
   "dependencies": {
-    "hono": "^4.6.14"
+    "@cloudflare/ai-chat": "^0.9.1",
+    "@cloudflare/kumo": "^2.6.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@streamdown/code": "^1.1.1",
+    "agents": "^0.17.1",
+    "ai": "^6.0.197",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "streamdown": "^2.5.0",
+    "workers-ai-provider": "^3.2.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241230.0",
-    "typescript": "^5.7.2",
-    "wrangler": "^4.105.0"
+    "@babel/plugin-proposal-decorators": "^8.0.2",
+    "@cloudflare/vite-plugin": "1.42.3",
+    "@cloudflare/workers-types": "^4.20260628.1",
+    "@rolldown/plugin-babel": "^0.2.3",
+    "@tailwindcss/vite": "^4.3.1",
+    "@types/node": "^26.1.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "oxfmt": "^0.56.0",
+    "oxlint": "^1.71.0",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0",
+    "wrangler": "^4.106.0"
+  },
+  "allowScripts": {
+    "core-js-pure@3.49.0": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260625.1": true,
+    "sharp@0.34.5": true,
+    "fsevents@2.3.3": true
   }
 }
