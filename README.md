@@ -265,17 +265,3 @@ Defines the Google OAuth routes, callback token exchange, Gmail inbox route, and
 ### `src/google/gmail.ts`
 
 Calls Gmail REST APIs with `Authorization: Bearer <access_token>`.
-
-## Status
-
-- Basic Agent chat: complete
-- Jooble job search tool: complete
-- Google OAuth route skeleton: complete
-- Gmail inbox/send API helpers: complete
-- Gmail inbox/send agent tools: complete
-- Gmail send test script: complete
-- Chat review sidebar: complete
-- Per-user/per-chat memory isolation: complete
-- Cloudflare deploy: complete
-- Custom domain migration: complete
-- Real Gmail account and OAuth client: complete
