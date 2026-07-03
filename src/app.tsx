@@ -1,4 +1,11 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject
+} from "react";
 import { useAgent } from "agents/react";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
@@ -29,7 +36,8 @@ import {
   PaperclipIcon,
   ImageIcon,
   PencilSimpleIcon,
-  CheckIcon
+  CheckIcon,
+  ListIcon
 } from "@phosphor-icons/react";
 
 // Image attachments are optional, but the helper keeps the message format small and predictable.
@@ -198,10 +206,12 @@ function ToolPartView({ part }: { part: UIMessage["parts"][number] }) {
 
 function Chat({
   agentName,
-  onMessageSent
+  onMessageSent,
+  onOpenSidebar
 }: {
   agentName: string;
   onMessageSent: (text: string) => void;
+  onOpenSidebar: () => void;
 }) {
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState("");
@@ -338,19 +348,27 @@ function Chat({
       )}
 
       {/* Header */}
-      <header className="px-5 py-4 bg-kumo-base border-b border-kumo-line">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-kumo-default">
+      <header className="px-3 py-3 sm:px-5 sm:py-4 bg-kumo-base border-b border-kumo-line">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Button
+              variant="ghost"
+              shape="square"
+              aria-label="Open chat sidebar"
+              icon={<ListIcon size={18} />}
+              onClick={onOpenSidebar}
+              className="md:hidden shrink-0"
+            />
+            <h1 className="text-base sm:text-lg font-semibold text-kumo-default truncate">
               WorkingHelper
             </h1>
-            <Badge variant="secondary">
+            <Badge variant="secondary" className="hidden sm:inline-flex">
               <ChatCircleDotsIcon size={12} weight="bold" className="mr-1" />
               AI Chat
             </Badge>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            <div className="hidden sm:flex items-center gap-1.5">
               <CircleIcon
                 size={8}
                 weight="fill"
@@ -365,22 +383,31 @@ function Chat({
               variant="secondary"
               icon={<TrashIcon size={16} />}
               onClick={clearHistory}
+              className="hidden sm:inline-flex"
             >
               Clear
             </Button>
+            <Button
+              variant="secondary"
+              shape="square"
+              aria-label="Clear chat"
+              icon={<TrashIcon size={16} />}
+              onClick={clearHistory}
+              className="sm:hidden"
+            />
           </div>
         </div>
       </header>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-5 py-6 space-y-5">
+        <div className="max-w-3xl mx-auto px-3 sm:px-5 py-5 sm:py-6 space-y-5">
           {messages.length === 0 && (
             <Empty
               icon={<ChatCircleDotsIcon size={32} />}
               title="Start a conversation"
               contents={
-                <div className="flex flex-wrap justify-center gap-2">
+                <div className="flex flex-wrap justify-center gap-2 max-w-full">
                   {[
                     "Find frontend engineer jobs in New York",
                     "Search remote software engineer internships",
@@ -532,7 +559,7 @@ function Chat({
             e.preventDefault();
             send();
           }}
-          className="max-w-3xl mx-auto px-5 py-4"
+          className="max-w-3xl mx-auto px-3 sm:px-5 py-4"
         >
           <input
             ref={fileInputRef}
@@ -638,6 +665,177 @@ function Chat({
   );
 }
 
+type SidebarContentProps = {
+  reviews: ChatReview[];
+  activeChatId: string;
+  gmailStatus: GmailStatus;
+  userId: string;
+  editingChatId: string | null;
+  editingTitle: string;
+  editInputRef: RefObject<HTMLInputElement | null>;
+  setEditingTitle: (title: string) => void;
+  createNewChat: () => void;
+  selectChat: (chatId: string) => void;
+  startEditingReview: (review: ChatReview) => void;
+  saveEditingReview: () => void;
+  cancelEditingReview: () => void;
+  deleteReview: (reviewId: string) => void;
+  disconnectGmail: () => void;
+};
+
+function SidebarContent({
+  reviews,
+  activeChatId,
+  gmailStatus,
+  userId,
+  editingChatId,
+  editingTitle,
+  editInputRef,
+  setEditingTitle,
+  createNewChat,
+  selectChat,
+  startEditingReview,
+  saveEditingReview,
+  cancelEditingReview,
+  deleteReview,
+  disconnectGmail
+}: SidebarContentProps) {
+  return (
+    <>
+      <div className="p-4 border-b border-kumo-line">
+        <Button
+          variant="primary"
+          icon={<PlusIcon size={16} />}
+          onClick={createNewChat}
+          className="w-full justify-center"
+        >
+          New chat
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-1">
+        {reviews.map((review) => {
+          const isActive = review.id === activeChatId;
+          const isEditing = review.id === editingChatId;
+
+          return (
+            <div
+              key={review.id}
+              className={`group flex items-center gap-1 rounded-lg border px-2 py-2 transition-colors ${
+                isActive
+                  ? "border-kumo-brand bg-kumo-control"
+                  : "border-transparent hover:bg-kumo-control"
+              }`}
+            >
+              {isEditing ? (
+                <input
+                  ref={editInputRef}
+                  value={editingTitle}
+                  onChange={(event) => setEditingTitle(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") saveEditingReview();
+                    if (event.key === "Escape") cancelEditingReview();
+                  }}
+                  aria-label="Edit chat name"
+                  className="min-w-0 flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-sm font-medium text-kumo-default outline-none focus:border-kumo-brand"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => selectChat(review.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block truncate text-sm font-medium text-kumo-default">
+                    {review.title}
+                  </span>
+                  <span className="block text-xs text-kumo-subtle mt-0.5">
+                    {new Date(review.updatedAt).toLocaleDateString()}
+                  </span>
+                </button>
+              )}
+
+              <div className="flex shrink-0 items-center gap-0.5 opacity-100 md:opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                {isEditing ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={saveEditingReview}
+                      className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
+                      aria-label="Save chat name"
+                      title="Save"
+                    >
+                      <CheckIcon size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditingReview}
+                      className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
+                      aria-label="Cancel editing"
+                      title="Cancel"
+                    >
+                      <XIcon size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => startEditingReview(review)}
+                      className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
+                      aria-label={`Rename ${review.title}`}
+                      title="Rename"
+                    >
+                      <PencilSimpleIcon size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteReview(review.id)}
+                      className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-danger"
+                      aria-label={`Delete ${review.title}`}
+                      title="Delete"
+                    >
+                      <TrashIcon size={14} />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="p-3 border-t border-kumo-line">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            window.location.href = "/auth/google";
+          }}
+          className="w-full justify-center mb-3"
+        >
+          {gmailStatus.connected ? "Switch Gmail" : "Connect Gmail"}
+        </Button>
+        {gmailStatus.connected && (
+          <Button
+            variant="ghost"
+            onClick={disconnectGmail}
+            className="w-full justify-center mb-3"
+          >
+            Disconnect Gmail
+          </Button>
+        )}
+        <div className="space-y-1">
+          <Text size="xs" variant="secondary">
+            Local user: {userId.slice(-8)}
+          </Text>
+          <Text size="xs" variant="secondary">
+            Gmail: {gmailStatus.email || "Not connected"}
+          </Text>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const [userId] = useState(getOrCreateUserId);
   const [reviews, setReviews] = useState(() => loadChatReviews(userId));
@@ -646,6 +844,7 @@ export default function App() {
     configured: false,
     connected: false
   });
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -689,6 +888,12 @@ export default function App() {
     setReviews((current) => [review, ...current].slice(0, CHAT_REVIEW_LIMIT));
     setActiveChatId(review.id);
     setEditingChatId(null);
+    setMobileSidebarOpen(false);
+  }, []);
+
+  const selectChat = useCallback((chatId: string) => {
+    setActiveChatId(chatId);
+    setMobileSidebarOpen(false);
   }, []);
 
   const startEditingReview = useCallback((review: ChatReview) => {
@@ -777,144 +982,74 @@ export default function App() {
         </div>
       }
     >
-      <div className="flex h-screen bg-kumo-elevated">
+      <div className="flex h-screen w-full overflow-hidden bg-kumo-elevated">
+        {mobileSidebarOpen && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/35"
+              aria-label="Close chat sidebar"
+              onClick={() => setMobileSidebarOpen(false)}
+            />
+            <aside className="relative flex h-full w-[82vw] max-w-80 flex-col border-r border-kumo-line bg-kumo-base shadow-xl">
+              <div className="flex items-center justify-between border-b border-kumo-line px-4 py-3">
+                <Text bold as="span">
+                  Chats
+                </Text>
+                <Button
+                  variant="ghost"
+                  shape="square"
+                  aria-label="Close chat sidebar"
+                  icon={<XIcon size={18} />}
+                  onClick={() => setMobileSidebarOpen(false)}
+                />
+              </div>
+              <SidebarContent
+                reviews={reviews}
+                activeChatId={activeChatId}
+                gmailStatus={gmailStatus}
+                userId={userId}
+                editingChatId={editingChatId}
+                editingTitle={editingTitle}
+                editInputRef={editInputRef}
+                setEditingTitle={setEditingTitle}
+                createNewChat={createNewChat}
+                selectChat={selectChat}
+                startEditingReview={startEditingReview}
+                saveEditingReview={saveEditingReview}
+                cancelEditingReview={cancelEditingReview}
+                deleteReview={deleteReview}
+                disconnectGmail={disconnectGmail}
+              />
+            </aside>
+          </div>
+        )}
+
         <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-kumo-line bg-kumo-base">
-          <div className="p-4 border-b border-kumo-line">
-            <Button
-              variant="primary"
-              icon={<PlusIcon size={16} />}
-              onClick={createNewChat}
-              className="w-full justify-center"
-            >
-              New chat
-            </Button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3 space-y-1">
-            {reviews.map((review) => {
-              const isActive = review.id === activeChatId;
-              const isEditing = review.id === editingChatId;
-
-              return (
-                <div
-                  key={review.id}
-                  className={`group flex items-center gap-1 rounded-lg border px-2 py-2 transition-colors ${
-                    isActive
-                      ? "border-kumo-brand bg-kumo-control"
-                      : "border-transparent hover:bg-kumo-control"
-                  }`}
-                >
-                  {isEditing ? (
-                    <input
-                      ref={editInputRef}
-                      value={editingTitle}
-                      onChange={(event) => setEditingTitle(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") saveEditingReview();
-                        if (event.key === "Escape") cancelEditingReview();
-                      }}
-                      aria-label="Edit chat name"
-                      className="min-w-0 flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-sm font-medium text-kumo-default outline-none focus:border-kumo-brand"
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setActiveChatId(review.id)}
-                      className="min-w-0 flex-1 text-left"
-                    >
-                      <span className="block truncate text-sm font-medium text-kumo-default">
-                        {review.title}
-                      </span>
-                      <span className="block text-xs text-kumo-subtle mt-0.5">
-                        {new Date(review.updatedAt).toLocaleDateString()}
-                      </span>
-                    </button>
-                  )}
-
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                    {isEditing ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={saveEditingReview}
-                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
-                          aria-label="Save chat name"
-                          title="Save"
-                        >
-                          <CheckIcon size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditingReview}
-                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
-                          aria-label="Cancel editing"
-                          title="Cancel"
-                        >
-                          <XIcon size={14} />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => startEditingReview(review)}
-                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
-                          aria-label={`Rename ${review.title}`}
-                          title="Rename"
-                        >
-                          <PencilSimpleIcon size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteReview(review.id)}
-                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-danger"
-                          aria-label={`Delete ${review.title}`}
-                          title="Delete"
-                        >
-                          <TrashIcon size={14} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="p-3 border-t border-kumo-line">
-            <Button
-              variant="secondary"
-              onClick={() => {
-                window.location.href = "/auth/google";
-              }}
-              className="w-full justify-center mb-3"
-            >
-              {gmailStatus.connected ? "Switch Gmail" : "Connect Gmail"}
-            </Button>
-            {gmailStatus.connected && (
-              <Button
-                variant="ghost"
-                onClick={disconnectGmail}
-                className="w-full justify-center mb-3"
-              >
-                Disconnect Gmail
-              </Button>
-            )}
-            <div className="space-y-1">
-              <Text size="xs" variant="secondary">
-                Local user: {userId.slice(-8)}
-              </Text>
-              <Text size="xs" variant="secondary">
-                Gmail: {gmailStatus.email || "Not connected"}
-              </Text>
-            </div>
-          </div>
+          <SidebarContent
+            reviews={reviews}
+            activeChatId={activeChatId}
+            gmailStatus={gmailStatus}
+            userId={userId}
+            editingChatId={editingChatId}
+            editingTitle={editingTitle}
+            editInputRef={editInputRef}
+            setEditingTitle={setEditingTitle}
+            createNewChat={createNewChat}
+            selectChat={selectChat}
+            startEditingReview={startEditingReview}
+            saveEditingReview={saveEditingReview}
+            cancelEditingReview={cancelEditingReview}
+            deleteReview={deleteReview}
+            disconnectGmail={disconnectGmail}
+          />
         </aside>
 
         <Chat
           key={activeChatId}
           agentName={agentName}
           onMessageSent={updateActiveReview}
+          onOpenSidebar={() => setMobileSidebarOpen(true)}
         />
       </div>
     </Suspense>
