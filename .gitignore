@@ -143,11 +143,9 @@ dist
 .DS_Store
 
 # Cloudflare
-.wrangler
+.wrangler/
 .dev.vars
+.dev.vars.*
 .local-backup/
-
-
-.dev.vars*
 !.dev.vars.example
 .env.example

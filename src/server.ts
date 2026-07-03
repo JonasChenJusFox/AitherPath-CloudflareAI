@@ -1,7 +1,21 @@
 import { createWorkersAI } from "workers-ai-provider";
-import { routeAgentRequest } from "agents";
+import {
+  routeAgentRequest,
+  type Connection,
+  type ConnectionContext
+} from "agents";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { searchJobs } from "./jobSearch";
+import { handleGoogleRoutes } from "./auth/googleRoutes";
+import { listInboxMessages, sendGmailMessage } from "./google/gmail";
+import {
+  getGoogleOAuthConfig,
+  refreshGoogleAccessToken
+} from "./auth/googleOAuth";
+import {
+  getGoogleAccessToken,
+  getGoogleRefreshToken
+} from "./storage/cookieSession";
 import {
   convertToModelMessages,
   pruneMessages,
@@ -14,6 +28,31 @@ import { z } from "zod";
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
   chatRecovery = true;
+  private gmailCookieHeader = "";
+
+  onConnect(_connection: Connection, ctx: ConnectionContext) {
+    // The WebSocket upgrade carries the same HttpOnly cookies as normal requests.
+    this.gmailCookieHeader = ctx.request.headers.get("Cookie") || "";
+  }
+
+  private async getGmailAccessToken() {
+    const request = new Request("https://workinghelper.com", {
+      headers: {
+        Cookie: this.gmailCookieHeader
+      }
+    });
+
+    const accessToken = getGoogleAccessToken(request);
+    if (accessToken) return accessToken;
+
+    const refreshToken = getGoogleRefreshToken(request);
+    const config = getGoogleOAuthConfig(this.env);
+    if (!refreshToken || !config) return null;
+
+    // Refresh only on the server so the browser never sees the Google client secret.
+    const tokens = await refreshGoogleAccessToken(config, refreshToken);
+    return tokens.access_token;
+  }
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
     const workersai = createWorkersAI({ binding: this.env.AI });
@@ -22,7 +61,9 @@ export class ChatAgent extends AIChatAgent<Env> {
       model: workersai("@cf/moonshotai/kimi-k2.6", {
         sessionAffinity: this.sessionAffinity
       }),
-      system: `You are WorkingHelper, an AI job search assistant. Help users search for jobs, understand job results, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
+      system: `You are WorkingHelper, an AI job search assistant. Help users search for jobs, understand job results, manage Gmail-related job search communication, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
+
+You can use Gmail tools only when the user has connected Gmail. When a user asks to read recent inbox messages, use listGmailInbox. When a user explicitly asks you to send an email, use sendGmailEmail only after you have a recipient email address, a subject, and the complete body. If any of those details are missing, ask a short follow-up question instead of sending.
 
 Keep answers concise and practical. If the job API returns no useful results, suggest how the user can broaden the search.`,
       // Prune old tool calls to save tokens on long conversations
@@ -31,7 +72,6 @@ Keep answers concise and practical. If the job API returns no useful results, su
         toolCalls: "before-last-2-messages"
       }),
       tools: {
-        // This is the first real WorkingHelper tool: the model calls it when the user asks for job openings.
         searchJobs: tool({
           description:
             "Search current job postings using keywords and an optional location. Use this whenever the user asks to find jobs, internships, openings, roles, or hiring companies.",
@@ -63,6 +103,68 @@ Keep answers concise and practical. If the job API returns no useful results, su
               })
             };
           }
+        }),
+        listGmailInbox: tool({
+          description:
+            "Read recent Gmail inbox messages for the connected user. Use when the user asks to check, read, or summarize recent inbox emails.",
+          inputSchema: z.object({
+            maxResults: z
+              .number()
+              .int()
+              .min(1)
+              .max(10)
+              .optional()
+              .describe(
+                "Maximum number of inbox messages to read, from 1 to 10"
+              )
+          }),
+          execute: async ({ maxResults }) => {
+            const accessToken = await this.getGmailAccessToken();
+
+            if (!accessToken) {
+              return {
+                error:
+                  "Gmail is not connected. Ask the user to click Connect Gmail first."
+              };
+            }
+
+            return {
+              messages: await listInboxMessages(accessToken, maxResults ?? 5)
+            };
+          }
+        }),
+        sendGmailEmail: tool({
+          description:
+            "Send a plain-text email from the connected Gmail account. Use only when the user explicitly asks to send an email and provides a recipient email address, subject, and complete body.",
+          inputSchema: z.object({
+            to: z
+              .email()
+              .describe("Recipient email address, such as person@example.com"),
+            subject: z.string().min(1).describe("Email subject line"),
+            body: z.string().min(1).describe("Plain-text email body")
+          }),
+          execute: async ({ to, subject, body }) => {
+            const accessToken = await this.getGmailAccessToken();
+
+            if (!accessToken) {
+              return {
+                error:
+                  "Gmail is not connected. Ask the user to click Connect Gmail first."
+              };
+            }
+
+            const result = await sendGmailMessage(accessToken, {
+              to: to.trim(),
+              subject: subject.trim(),
+              body: body.trim()
+            });
+
+            return {
+              sent: true,
+              messageId: result.id,
+              threadId: result.threadId
+            };
+          }
         })
       },
       stopWhen: stepCountIs(5),
@@ -75,6 +177,9 @@ Keep answers concise and practical. If the job API returns no useful results, su
 
 export default {
   async fetch(request: Request, env: Env) {
+    const googleResponse = await handleGoogleRoutes(request, env);
+    if (googleResponse) return googleResponse;
+
     return (
       (await routeAgentRequest(request, env)) ||
       new Response("Not found", { status: 404 })

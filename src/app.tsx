@@ -9,7 +9,6 @@ import {
   Empty,
   InputArea,
   Surface,
-  Switch,
   Text
 } from "@cloudflare/kumo";
 import { Streamdown } from "streamdown";
@@ -18,6 +17,7 @@ import {
   PaperPlaneRightIcon,
   StopIcon,
   TrashIcon,
+  PlusIcon,
   GearIcon,
   ChatCircleDotsIcon,
   CircleIcon,
@@ -25,19 +25,88 @@ import {
   SunIcon,
   BrainIcon,
   CaretDownIcon,
-  BugIcon,
   XIcon,
   PaperclipIcon,
-  ImageIcon
+  ImageIcon,
+  PencilSimpleIcon,
+  CheckIcon
 } from "@phosphor-icons/react";
 
 // Image attachments are optional, but the helper keeps the message format small and predictable.
+
+const CHAT_REVIEW_LIMIT = 30;
+const USER_ID_KEY = "workinghelper_user_id";
+
+type ChatReview = {
+  id: string;
+  title: string;
+  updatedAt: number;
+};
+
+type GmailStatus = {
+  configured: boolean;
+  connected: boolean;
+  email?: string;
+  placeholderEmail?: string;
+};
 
 interface Attachment {
   id: string;
   file: File;
   preview: string;
   mediaType: string;
+}
+
+function createId(prefix: string) {
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+function getOrCreateUserId() {
+  const existing = localStorage.getItem(USER_ID_KEY);
+  if (existing) return existing;
+
+  const userId = createId("local_user");
+  localStorage.setItem(USER_ID_KEY, userId);
+  return userId;
+}
+
+function getReviewStorageKey(userId: string) {
+  return `workinghelper_chat_reviews_${userId}`;
+}
+
+function createEmptyReview(): ChatReview {
+  return {
+    id: createId("chat"),
+    title: "New chat",
+    updatedAt: Date.now()
+  };
+}
+
+function loadChatReviews(userId: string) {
+  const raw = localStorage.getItem(getReviewStorageKey(userId));
+  if (!raw) return [createEmptyReview()];
+
+  try {
+    const reviews = JSON.parse(raw) as ChatReview[];
+    return reviews.length > 0
+      ? reviews.slice(0, CHAT_REVIEW_LIMIT)
+      : [createEmptyReview()];
+  } catch {
+    return [createEmptyReview()];
+  }
+}
+
+function saveChatReviews(userId: string, reviews: ChatReview[]) {
+  localStorage.setItem(
+    getReviewStorageKey(userId),
+    JSON.stringify(reviews.slice(0, CHAT_REVIEW_LIMIT))
+  );
+}
+
+function createReviewTitle(text: string) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (!clean) return "Image chat";
+  return clean.length > 48 ? `${clean.slice(0, 45)}...` : clean;
 }
 
 function createAttachment(file: File): Attachment {
@@ -127,10 +196,15 @@ function ToolPartView({ part }: { part: UIMessage["parts"][number] }) {
   return null;
 }
 
-function Chat() {
+function Chat({
+  agentName,
+  onMessageSent
+}: {
+  agentName: string;
+  onMessageSent: (text: string) => void;
+}) {
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState("");
-  const [showDebug, setShowDebug] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -139,6 +213,7 @@ function Chat() {
 
   const agent = useAgent<ChatAgent>({
     agent: "ChatAgent",
+    name: agentName,
     onOpen: useCallback(() => setConnected(true), []),
     onClose: useCallback(() => setConnected(false), []),
     onError: useCallback(
@@ -240,12 +315,13 @@ function Chat() {
     setAttachments([]);
 
     sendMessage({ role: "user", parts });
+    onMessageSent(text);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [input, attachments, isStreaming, sendMessage]);
+  }, [input, attachments, isStreaming, sendMessage, onMessageSent]);
 
   return (
     <div
-      className="flex flex-col h-screen bg-kumo-elevated relative"
+      className="flex flex-col h-screen bg-kumo-elevated relative min-w-0 flex-1"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -284,15 +360,6 @@ function Chat() {
                 {connected ? "Connected" : "Disconnected"}
               </Text>
             </div>
-            <div className="flex items-center gap-1.5">
-              <BugIcon size={14} className="text-kumo-inactive" />
-              <Switch
-                checked={showDebug}
-                onCheckedChange={setShowDebug}
-                size="sm"
-                aria-label="Toggle debug mode"
-              />
-            </div>
             <ThemeToggle />
             <Button
               variant="secondary"
@@ -330,6 +397,7 @@ function Chat() {
                           role: "user",
                           parts: [{ type: "text", text: prompt }]
                         });
+                        onMessageSent(prompt);
                       }}
                     >
                       {prompt}
@@ -347,12 +415,6 @@ function Chat() {
 
             return (
               <div key={message.id} className="space-y-2">
-                {showDebug && (
-                  <pre className="text-[11px] text-kumo-subtle bg-kumo-control rounded-lg p-3 overflow-auto max-h-64">
-                    {JSON.stringify(message, null, 2)}
-                  </pre>
-                )}
-
                 {message.parts.filter(isToolUIPart).map((part) => (
                   <ToolPartView key={part.toolCallId} part={part} />
                 ))}
@@ -577,6 +639,136 @@ function Chat() {
 }
 
 export default function App() {
+  const [userId] = useState(getOrCreateUserId);
+  const [reviews, setReviews] = useState(() => loadChatReviews(userId));
+  const [activeChatId, setActiveChatId] = useState(() => reviews[0].id);
+  const [gmailStatus, setGmailStatus] = useState<GmailStatus>({
+    configured: false,
+    connected: false
+  });
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    saveChatReviews(userId, reviews);
+  }, [userId, reviews]);
+
+  const refreshGmailStatus = useCallback(async () => {
+    try {
+      const response = await fetch("/api/gmail/status");
+      if (!response.ok) return;
+      setGmailStatus((await response.json()) as GmailStatus);
+    } catch (error) {
+      console.error("Failed to load Gmail status:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshGmailStatus();
+  }, [refreshGmailStatus]);
+
+  useEffect(() => {
+    if (editingChatId) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [editingChatId]);
+
+  const disconnectGmail = useCallback(async () => {
+    await fetch("/auth/google/logout");
+    setGmailStatus((current) => ({
+      ...current,
+      connected: false,
+      email: undefined
+    }));
+  }, []);
+
+  const createNewChat = useCallback(() => {
+    const review = createEmptyReview();
+    setReviews((current) => [review, ...current].slice(0, CHAT_REVIEW_LIMIT));
+    setActiveChatId(review.id);
+    setEditingChatId(null);
+  }, []);
+
+  const startEditingReview = useCallback((review: ChatReview) => {
+    setEditingChatId(review.id);
+    setEditingTitle(review.title);
+  }, []);
+
+  const cancelEditingReview = useCallback(() => {
+    setEditingChatId(null);
+    setEditingTitle("");
+  }, []);
+
+  const saveEditingReview = useCallback(() => {
+    if (!editingChatId) return;
+
+    const title = editingTitle.replace(/\s+/g, " ").trim();
+    if (!title) {
+      cancelEditingReview();
+      return;
+    }
+
+    setReviews((current) =>
+      current.map((review) =>
+        review.id === editingChatId
+          ? { ...review, title, updatedAt: Date.now() }
+          : review
+      )
+    );
+    cancelEditingReview();
+  }, [cancelEditingReview, editingChatId, editingTitle]);
+
+  const deleteReview = useCallback(
+    (reviewId: string) => {
+      setReviews((current) => {
+        const remaining = current.filter((review) => review.id !== reviewId);
+
+        if (remaining.length === 0) {
+          const replacement = createEmptyReview();
+          setActiveChatId(replacement.id);
+          return [replacement];
+        }
+
+        if (reviewId === activeChatId) {
+          setActiveChatId(remaining[0].id);
+        }
+
+        return remaining;
+      });
+
+      if (editingChatId === reviewId) {
+        cancelEditingReview();
+      }
+    },
+    [activeChatId, cancelEditingReview, editingChatId]
+  );
+
+  const updateActiveReview = useCallback(
+    (text: string) => {
+      setReviews((current) => {
+        const now = Date.now();
+        const title = createReviewTitle(text);
+        const existing = current.find((review) => review.id === activeChatId);
+        const updated = {
+          id: activeChatId,
+          title:
+            existing?.title === "New chat" ? title : existing?.title || title,
+          updatedAt: now
+        };
+
+        return [
+          updated,
+          ...current.filter((review) => review.id !== activeChatId)
+        ].slice(0, CHAT_REVIEW_LIMIT);
+      });
+    },
+    [activeChatId]
+  );
+
+  const agentName = `${userId}:${activeChatId}`;
+
   return (
     <Suspense
       fallback={
@@ -585,7 +777,146 @@ export default function App() {
         </div>
       }
     >
-      <Chat />
+      <div className="flex h-screen bg-kumo-elevated">
+        <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-kumo-line bg-kumo-base">
+          <div className="p-4 border-b border-kumo-line">
+            <Button
+              variant="primary"
+              icon={<PlusIcon size={16} />}
+              onClick={createNewChat}
+              className="w-full justify-center"
+            >
+              New chat
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3 space-y-1">
+            {reviews.map((review) => {
+              const isActive = review.id === activeChatId;
+              const isEditing = review.id === editingChatId;
+
+              return (
+                <div
+                  key={review.id}
+                  className={`group flex items-center gap-1 rounded-lg border px-2 py-2 transition-colors ${
+                    isActive
+                      ? "border-kumo-brand bg-kumo-control"
+                      : "border-transparent hover:bg-kumo-control"
+                  }`}
+                >
+                  {isEditing ? (
+                    <input
+                      ref={editInputRef}
+                      value={editingTitle}
+                      onChange={(event) => setEditingTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") saveEditingReview();
+                        if (event.key === "Escape") cancelEditingReview();
+                      }}
+                      aria-label="Edit chat name"
+                      className="min-w-0 flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 py-1 text-sm font-medium text-kumo-default outline-none focus:border-kumo-brand"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setActiveChatId(review.id)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <span className="block truncate text-sm font-medium text-kumo-default">
+                        {review.title}
+                      </span>
+                      <span className="block text-xs text-kumo-subtle mt-0.5">
+                        {new Date(review.updatedAt).toLocaleDateString()}
+                      </span>
+                    </button>
+                  )}
+
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    {isEditing ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={saveEditingReview}
+                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
+                          aria-label="Save chat name"
+                          title="Save"
+                        >
+                          <CheckIcon size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditingReview}
+                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
+                          aria-label="Cancel editing"
+                          title="Cancel"
+                        >
+                          <XIcon size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => startEditingReview(review)}
+                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-default"
+                          aria-label={`Rename ${review.title}`}
+                          title="Rename"
+                        >
+                          <PencilSimpleIcon size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteReview(review.id)}
+                          className="rounded-md p-1 text-kumo-subtle hover:bg-kumo-base hover:text-kumo-danger"
+                          aria-label={`Delete ${review.title}`}
+                          title="Delete"
+                        >
+                          <TrashIcon size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="p-3 border-t border-kumo-line">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                window.location.href = "/auth/google";
+              }}
+              className="w-full justify-center mb-3"
+            >
+              {gmailStatus.connected ? "Switch Gmail" : "Connect Gmail"}
+            </Button>
+            {gmailStatus.connected && (
+              <Button
+                variant="ghost"
+                onClick={disconnectGmail}
+                className="w-full justify-center mb-3"
+              >
+                Disconnect Gmail
+              </Button>
+            )}
+            <div className="space-y-1">
+              <Text size="xs" variant="secondary">
+                Local user: {userId.slice(-8)}
+              </Text>
+              <Text size="xs" variant="secondary">
+                Gmail: {gmailStatus.email || "Not connected"}
+              </Text>
+            </div>
+          </div>
+        </aside>
+
+        <Chat
+          key={activeChatId}
+          agentName={agentName}
+          onMessageSent={updateActiveReview}
+        />
+      </div>
     </Suspense>
   );
 }

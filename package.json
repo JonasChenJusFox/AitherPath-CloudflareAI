@@ -1,5 +1,5 @@
 {
-  "name": "workinghelper-agent",
+  "name": "workinghelper",
   "version": "1.0.0",
   "private": true,
   "description": "WorkingHelper AI job search agent built on Cloudflare Workers",
@@ -15,11 +15,12 @@
     "dev": "vite dev",
     "start": "vite dev",
     "build": "vite build",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "node scripts/deploy-safe.mjs",
     "types": "wrangler types env.d.ts --include-runtime false",
     "format": "oxfmt --write .",
     "lint": "oxlint src/",
-    "check": "oxfmt --check . && oxlint src/ && tsc"
+    "check": "oxfmt --check . && oxlint src/ && tsc",
+    "send:test-email": "node scripts/send-test-email.mjs"
   },
   "dependencies": {
     "@cloudflare/ai-chat": "^0.9.1",
