@@ -973,6 +973,9 @@ export default function App() {
   );
 
   const agentName = `${userId}:${activeChatId}`;
+  const gmailConnectionKey = gmailStatus.connected
+    ? gmailStatus.email || "gmail-connected"
+    : "gmail-disconnected";
 
   return (
     <Suspense
@@ -1046,7 +1049,7 @@ export default function App() {
         </aside>
 
         <Chat
-          key={activeChatId}
+          key={`${activeChatId}:${gmailConnectionKey}`}
           agentName={agentName}
           onMessageSent={updateActiveReview}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
