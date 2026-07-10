@@ -173,6 +173,84 @@ export class ChatAgent extends AIChatAgent<Env> {
     };
   }
 
+  private memoryContext() {
+    const memories = this.listMemory();
+
+    if (memories.length === 0) {
+      return "No saved user memory yet.";
+    }
+
+    return memories
+      .map((memory) => `- ${memory.key}: ${memory.value}`)
+      .join("\n");
+  }
+
+  private messageText(message: unknown) {
+    const candidate = message as {
+      role?: string;
+      content?: unknown;
+      parts?: Array<{ type?: string; text?: string }>;
+    };
+
+    if (typeof candidate.content === "string") {
+      return candidate.content;
+    }
+
+    if (Array.isArray(candidate.parts)) {
+      return candidate.parts
+        .map((part) => (part.type === "text" ? part.text || "" : ""))
+        .join("")
+        .trim();
+    }
+
+    return "";
+  }
+
+  private latestUserMessageText() {
+    for (const message of [...this.messages].reverse()) {
+      const candidate = message as { role?: string };
+
+      if (candidate.role === "user") {
+        return this.messageText(message);
+      }
+    }
+
+    return "";
+  }
+
+  private autoSaveExplicitMemory(text: string) {
+    const cleanText = text.trim();
+    if (!/\b(remember|save this|save that|keep this)\b/i.test(cleanText)) {
+      return null;
+    }
+
+    if (
+      /\b(password|secret|token|api key|access token|refresh token)\b/i.test(
+        cleanText
+      )
+    ) {
+      return null;
+    }
+
+    const rememberedText = cleanText
+      .replace(/^(please\s+)?remember\s+(that\s+)?/i, "")
+      .replace(/^(please\s+)?save\s+(this|that)\s*:?/i, "")
+      .trim();
+
+    const saved = [
+      this.saveMemoryValue("profile:summary", rememberedText || cleanText)
+    ];
+
+    const nameMatch = rememberedText.match(
+      /\bmy name is\s+([A-Za-z][A-Za-z\s.'-]{1,80})/i
+    );
+    if (nameMatch?.[1]) {
+      saved.push(this.saveMemoryValue("profile:name", nameMatch[1].trim()));
+    }
+
+    return saved;
+  }
+
   override async fetch(request: Request) {
     const url = new URL(request.url);
     const requestId = getRequestId(request);
@@ -272,12 +350,21 @@ export class ChatAgent extends AIChatAgent<Env> {
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
     const workersai = createWorkersAI({ binding: this.env.AI });
     const today = new Date().toISOString().slice(0, 10);
+    const savedMemory = this.autoSaveExplicitMemory(
+      this.latestUserMessageText()
+    );
+    const memoryContext = this.memoryContext();
 
     const result = streamText({
       model: workersai("@cf/moonshotai/kimi-k2.6", {
         sessionAffinity: this.sessionAffinity
       }),
       system: `You are WorkingHelper, an AI job search assistant. Today's date is ${today} in UTC. Help users search for jobs, understand job results, manage Gmail-related job search communication, manage calendar events, search contacts, remember useful preferences, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
+
+Saved user memory:
+${memoryContext}
+
+If the user asks who they are, what you remember about them, or asks for profile details, answer from saved user memory when available. If this request explicitly asked you to remember something, it was already saved by the server${savedMemory ? ` (${savedMemory.map((memory) => memory.key).join(", ")})` : ""}; briefly confirm it without claiming a separate tool call.
 
 You can use Gmail tools only when the user has connected Gmail. When a user asks to read recent inbox messages, use listGmailInbox. When a user explicitly asks you to send an email, use sendGmailEmail only after you have a recipient email address, a subject, and the complete body. If any of those details are missing, ask a short follow-up question instead of sending.
 
