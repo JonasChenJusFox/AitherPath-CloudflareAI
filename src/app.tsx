@@ -372,6 +372,30 @@ function Chat({
 
   const isStreaming = status === "streaming" || status === "submitted";
 
+  const syncAgentAuth = useCallback(async () => {
+    try {
+      await fetch(
+        `/api/agent/auth-sync?name=${encodeURIComponent(agentName)}`,
+        { method: "POST" }
+      );
+    } catch (error) {
+      console.error("Failed to sync agent auth:", error);
+    }
+  }, [agentName]);
+
+  const sendTextPrompt = useCallback(
+    async (text: string) => {
+      if (isStreaming) return;
+      await syncAgentAuth();
+      sendMessage({
+        role: "user",
+        parts: [{ type: "text", text }]
+      });
+      onMessageSent(text);
+    },
+    [isStreaming, onMessageSent, sendMessage, syncAgentAuth]
+  );
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -457,10 +481,18 @@ function Chat({
     for (const att of attachments) URL.revokeObjectURL(att.preview);
     setAttachments([]);
 
+    await syncAgentAuth();
     sendMessage({ role: "user", parts });
     onMessageSent(text);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [input, attachments, isStreaming, sendMessage, onMessageSent]);
+  }, [
+    input,
+    attachments,
+    isStreaming,
+    sendMessage,
+    onMessageSent,
+    syncAgentAuth
+  ]);
 
   return (
     <div
@@ -558,13 +590,7 @@ function Chat({
                       variant="outline"
                       size="sm"
                       disabled={isStreaming}
-                      onClick={() => {
-                        sendMessage({
-                          role: "user",
-                          parts: [{ type: "text", text: prompt }]
-                        });
-                        onMessageSent(prompt);
-                      }}
+                      onClick={() => sendTextPrompt(prompt)}
                     >
                       {prompt}
                     </Button>

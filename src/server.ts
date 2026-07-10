@@ -176,6 +176,18 @@ export class ChatAgent extends AIChatAgent<Env> {
     const url = new URL(request.url);
     const requestId = getRequestId(request);
 
+    if (url.pathname === "/internal/auth-sync") {
+      if (request.headers.get("X-WorkingHelper-Internal") !== "auth-sync") {
+        return errorJson(
+          new ApiError("AUTHENTICATION_REQUIRED", "Internal route only.", 401),
+          requestId
+        );
+      }
+
+      this.gmailCookieHeader = request.headers.get("Cookie") || "";
+      return successJson({ synced: Boolean(this.gmailCookieHeader) });
+    }
+
     if (url.pathname.startsWith("/internal/week3/")) {
       if (request.headers.get("X-WorkingHelper-Internal") !== "week3") {
         return errorJson(
@@ -543,6 +555,33 @@ Keep answers concise and practical. If the job API returns no useful results, su
 
 export default {
   async fetch(request: Request, env: Env) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/api/agent/auth-sync" && request.method === "POST") {
+      const agentName = url.searchParams.get("name");
+      if (!agentName) {
+        return errorJson(
+          new ApiError("VALIDATION_ERROR", "Agent name is required.", 400),
+          getRequestId(request)
+        );
+      }
+
+      const agentId = env.ChatAgent.idFromName(agentName);
+      const agent = env.ChatAgent.get(agentId);
+      const syncUrl = new URL(request.url);
+      syncUrl.pathname = "/internal/auth-sync";
+
+      return agent.fetch(
+        new Request(syncUrl.toString(), {
+          method: "POST",
+          headers: {
+            Cookie: request.headers.get("Cookie") || "",
+            "X-WorkingHelper-Internal": "auth-sync"
+          }
+        })
+      );
+    }
+
     const googleResponse = await handleGoogleRoutes(request, env);
     if (googleResponse) return googleResponse;
 
