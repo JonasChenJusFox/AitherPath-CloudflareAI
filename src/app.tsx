@@ -37,10 +37,7 @@ import {
   ImageIcon,
   PencilSimpleIcon,
   CheckIcon,
-  ListIcon,
-  CalendarBlankIcon,
-  AddressBookIcon,
-  DatabaseIcon
+  ListIcon
 } from "@phosphor-icons/react";
 
 // Image attachments are optional, but the helper keeps the message format small and predictable.
@@ -59,27 +56,6 @@ type GmailStatus = {
   connected: boolean;
   email?: string;
   placeholderEmail?: string;
-};
-
-type DemoMessage = {
-  id: string;
-  title: string;
-  body: string;
-};
-
-type CalendarEventDraft = {
-  summary: string;
-  startDateTime: string;
-  endDateTime: string;
-  timeZone: string;
-};
-
-type ApiPayload = {
-  success?: boolean;
-  data?: unknown;
-  error?: {
-    message?: string;
-  };
 };
 
 interface Attachment {
@@ -148,111 +124,6 @@ function createAttachment(file: File): Attachment {
     preview: URL.createObjectURL(file),
     mediaType: file.type || "application/octet-stream"
   };
-}
-
-function formatJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function toDatetimeLocalValue(date: Date) {
-  const offsetMs = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
-}
-
-function createDefaultCalendarDraft(): CalendarEventDraft {
-  const start = new Date();
-  start.setHours(start.getHours() + 1, 0, 0, 0);
-  const end = new Date(start.getTime() + 30 * 60_000);
-
-  return {
-    summary: "WorkingHelper demo event",
-    startDateTime: toDatetimeLocalValue(start),
-    endDateTime: toDatetimeLocalValue(end),
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
-  };
-}
-
-function getTimeZoneOptions(currentTimeZone: string) {
-  return Array.from(
-    new Set([
-      currentTimeZone,
-      "UTC",
-      "America/New_York",
-      "America/Los_Angeles",
-      "Asia/Shanghai",
-      "Europe/London"
-    ])
-  );
-}
-
-function parseDatetimeLocal(value: string) {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!match) return null;
-
-  return {
-    year: Number(match[1]),
-    month: Number(match[2]),
-    day: Number(match[3]),
-    hour: Number(match[4]),
-    minute: Number(match[5])
-  };
-}
-
-function partsInTimeZone(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).formatToParts(date);
-
-  const map = new Map(parts.map((part) => [part.type, part.value]));
-  return {
-    year: Number(map.get("year")),
-    month: Number(map.get("month")),
-    day: Number(map.get("day")),
-    hour: Number(map.get("hour")),
-    minute: Number(map.get("minute")),
-    second: Number(map.get("second"))
-  };
-}
-
-function getTimeZoneOffsetMs(date: Date, timeZone: string) {
-  const parts = partsInTimeZone(date, timeZone);
-  const localAsUtc = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second
-  );
-  return localAsUtc - date.getTime();
-}
-
-function toZonedIso(datetimeLocal: string, timeZone: string) {
-  const parts = parseDatetimeLocal(datetimeLocal);
-  if (!parts) throw new Error("Choose a valid date and time.");
-
-  const guess = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    0
-  );
-  const first = guess - getTimeZoneOffsetMs(new Date(guess), timeZone);
-  const corrected = guess - getTimeZoneOffsetMs(new Date(first), timeZone);
-  return new Date(corrected).toISOString();
 }
 
 function fileToDataUri(file: File): Promise<string> {
@@ -337,16 +208,12 @@ function Chat({
   agentName,
   userId,
   onMessageSent,
-  onOpenSidebar,
-  demoMessages,
-  onClearDemoMessages
+  onOpenSidebar
 }: {
   agentName: string;
   userId: string;
   onMessageSent: (text: string) => void;
   onOpenSidebar: () => void;
-  demoMessages: DemoMessage[];
-  onClearDemoMessages: () => void;
 }) {
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState("");
@@ -553,10 +420,7 @@ function Chat({
             <Button
               variant="secondary"
               icon={<TrashIcon size={16} />}
-              onClick={() => {
-                clearHistory();
-                onClearDemoMessages();
-              }}
+              onClick={clearHistory}
               className="hidden sm:inline-flex"
             >
               Clear
@@ -566,10 +430,7 @@ function Chat({
               shape="square"
               aria-label="Clear chat"
               icon={<TrashIcon size={16} />}
-              onClick={() => {
-                clearHistory();
-                onClearDemoMessages();
-              }}
+              onClick={clearHistory}
               className="sm:hidden"
             />
           </div>
@@ -719,21 +580,6 @@ function Chat({
             );
           })}
 
-          {demoMessages.map((message) => (
-            <div key={message.id} className="flex justify-start">
-              <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-kumo-base text-kumo-default leading-relaxed">
-                <div className="rounded-2xl rounded-bl-md p-3">
-                  <Text size="sm" bold>
-                    {message.title}
-                  </Text>
-                  <pre className="mt-2 whitespace-pre-wrap text-sm font-sans text-kumo-default">
-                    {message.body}
-                  </pre>
-                </div>
-              </div>
-            </div>
-          ))}
-
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -859,8 +705,6 @@ type SidebarContentProps = {
   editingChatId: string | null;
   editingTitle: string;
   editInputRef: RefObject<HTMLInputElement | null>;
-  calendarDraft: CalendarEventDraft;
-  updateCalendarDraft: (patch: Partial<CalendarEventDraft>) => void;
   setEditingTitle: (title: string) => void;
   createNewChat: () => void;
   selectChat: (chatId: string) => void;
@@ -869,10 +713,6 @@ type SidebarContentProps = {
   cancelEditingReview: () => void;
   deleteReview: (reviewId: string) => void;
   disconnectGmail: () => void;
-  runCalendarTodayDemo: () => void;
-  runCreateCalendarEventDemo: () => void;
-  runContactsSearchDemo: () => void;
-  runMemoryDemo: () => void;
 };
 
 function SidebarContent({
@@ -883,8 +723,6 @@ function SidebarContent({
   editingChatId,
   editingTitle,
   editInputRef,
-  calendarDraft,
-  updateCalendarDraft,
   setEditingTitle,
   createNewChat,
   selectChat,
@@ -892,11 +730,7 @@ function SidebarContent({
   saveEditingReview,
   cancelEditingReview,
   deleteReview,
-  disconnectGmail,
-  runCalendarTodayDemo,
-  runCreateCalendarEventDemo,
-  runContactsSearchDemo,
-  runMemoryDemo
+  disconnectGmail
 }: SidebarContentProps) {
   return (
     <>
@@ -1003,94 +837,6 @@ function SidebarContent({
       </div>
 
       <div className="p-3 border-t border-kumo-line">
-        <div className="mb-3 space-y-2">
-          <Text size="xs" variant="secondary" bold>
-            Week 3 API demos
-          </Text>
-          <Button
-            variant="secondary"
-            icon={<CalendarBlankIcon size={16} />}
-            onClick={runCalendarTodayDemo}
-            className="w-full justify-center"
-          >
-            Today calendar
-          </Button>
-          <Button
-            variant="secondary"
-            icon={<CalendarBlankIcon size={16} />}
-            onClick={runCreateCalendarEventDemo}
-            className="w-full justify-center"
-          >
-            Create event
-          </Button>
-          <div className="space-y-2 rounded-lg border border-kumo-line p-2">
-            <label className="block text-xs font-medium text-kumo-subtle">
-              Event title
-              <input
-                value={calendarDraft.summary}
-                onChange={(event) =>
-                  updateCalendarDraft({ summary: event.target.value })
-                }
-                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
-              />
-            </label>
-            <label className="block text-xs font-medium text-kumo-subtle">
-              Start
-              <input
-                type="datetime-local"
-                value={calendarDraft.startDateTime}
-                onChange={(event) =>
-                  updateCalendarDraft({ startDateTime: event.target.value })
-                }
-                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
-              />
-            </label>
-            <label className="block text-xs font-medium text-kumo-subtle">
-              End
-              <input
-                type="datetime-local"
-                value={calendarDraft.endDateTime}
-                onChange={(event) =>
-                  updateCalendarDraft({ endDateTime: event.target.value })
-                }
-                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
-              />
-            </label>
-            <label className="block text-xs font-medium text-kumo-subtle">
-              Time zone
-              <select
-                value={calendarDraft.timeZone}
-                onChange={(event) =>
-                  updateCalendarDraft({ timeZone: event.target.value })
-                }
-                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
-              >
-                {getTimeZoneOptions(calendarDraft.timeZone).map((timeZone) => (
-                  <option key={timeZone} value={timeZone}>
-                    {timeZone}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <Button
-            variant="secondary"
-            icon={<AddressBookIcon size={16} />}
-            onClick={runContactsSearchDemo}
-            className="w-full justify-center"
-          >
-            Search contacts
-          </Button>
-          <Button
-            variant="secondary"
-            icon={<DatabaseIcon size={16} />}
-            onClick={runMemoryDemo}
-            className="w-full justify-center"
-          >
-            Save memory
-          </Button>
-        </div>
-
         <Button
           variant="secondary"
           onClick={() => {
@@ -1126,10 +872,6 @@ export default function App() {
   const [userId] = useState(getOrCreateUserId);
   const [reviews, setReviews] = useState(() => loadChatReviews(userId));
   const [activeChatId, setActiveChatId] = useState(() => reviews[0].id);
-  const [demoMessages, setDemoMessages] = useState<DemoMessage[]>([]);
-  const [calendarDraft, setCalendarDraft] = useState(
-    createDefaultCalendarDraft
-  );
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>({
     configured: false,
     connected: false
@@ -1142,10 +884,6 @@ export default function App() {
   useEffect(() => {
     saveChatReviews(userId, reviews);
   }, [userId, reviews]);
-
-  useEffect(() => {
-    setDemoMessages([]);
-  }, [activeChatId]);
 
   const refreshGmailStatus = useCallback(async () => {
     try {
@@ -1266,130 +1004,6 @@ export default function App() {
     [activeChatId]
   );
 
-  const addDemoMessage = useCallback(
-    (title: string, body: string) => {
-      setDemoMessages((current) => [
-        ...current,
-        { id: createId("demo"), title, body }
-      ]);
-      updateActiveReview(title);
-      setMobileSidebarOpen(false);
-    },
-    [updateActiveReview]
-  );
-
-  const readApiResponse = useCallback(async (response: Response) => {
-    const payload = (await response.json()) as ApiPayload;
-    if (!response.ok || payload.success === false) {
-      const message =
-        payload.error?.message ||
-        "The API request failed. Try reconnecting Google first.";
-      throw new Error(message);
-    }
-    return payload.data;
-  }, []);
-
-  const updateCalendarDraft = useCallback(
-    (patch: Partial<CalendarEventDraft>) => {
-      setCalendarDraft((current) => ({ ...current, ...patch }));
-    },
-    []
-  );
-
-  const runCalendarTodayDemo = useCallback(async () => {
-    try {
-      const timeZone =
-        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-      const data = await readApiResponse(
-        await fetch(
-          `/api/calendar/today?timeZone=${encodeURIComponent(timeZone)}&maxResults=10`
-        )
-      );
-      const events =
-        isRecord(data) && Array.isArray(data.events) ? data.events : [];
-      const body =
-        events.length === 0
-          ? `No events found today.\n\nRaw response:\n${formatJson(data)}`
-          : events
-              .map(
-                (event: { summary?: string; start?: string; end?: string }) =>
-                  `- ${event.summary || "(No title)"}\n  ${event.start || "No start"} → ${event.end || "No end"}`
-              )
-              .join("\n\n");
-      addDemoMessage("Calendar: today's events", body);
-    } catch (error) {
-      addDemoMessage("Calendar demo failed", (error as Error).message);
-    }
-  }, [addDemoMessage, readApiResponse]);
-
-  const runCreateCalendarEventDemo = useCallback(async () => {
-    try {
-      const summary = calendarDraft.summary.replace(/\s+/g, " ").trim();
-      if (!summary) throw new Error("Enter an event title.");
-
-      const startDateTime = toZonedIso(
-        calendarDraft.startDateTime,
-        calendarDraft.timeZone
-      );
-      const endDateTime = toZonedIso(
-        calendarDraft.endDateTime,
-        calendarDraft.timeZone
-      );
-      const data = await readApiResponse(
-        await fetch("/api/calendar/events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            summary,
-            startDateTime,
-            endDateTime,
-            timeZone: calendarDraft.timeZone,
-            sendUpdates: "none"
-          })
-        })
-      );
-      addDemoMessage("Calendar: event created", formatJson(data));
-    } catch (error) {
-      addDemoMessage("Create event failed", (error as Error).message);
-    }
-  }, [addDemoMessage, calendarDraft, readApiResponse]);
-
-  const runContactsSearchDemo = useCallback(async () => {
-    const query = window.prompt("Contact keyword", "Jonas");
-    if (!query) return;
-
-    try {
-      const data = await readApiResponse(
-        await fetch(
-          `/api/contacts/search?q=${encodeURIComponent(query)}&pageSize=10`
-        )
-      );
-      addDemoMessage("Contacts search result", formatJson(data));
-    } catch (error) {
-      addDemoMessage("Contacts demo failed", (error as Error).message);
-    }
-  }, [addDemoMessage, readApiResponse]);
-
-  const runMemoryDemo = useCallback(async () => {
-    const key = window.prompt("Memory key", "job_search_goal");
-    if (!key) return;
-    const value = window.prompt("Memory value", "Frontend roles in New York");
-    if (!value) return;
-
-    try {
-      const data = await readApiResponse(
-        await fetch("/api/memory", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key, value })
-        })
-      );
-      addDemoMessage("Memory saved", formatJson(data));
-    } catch (error) {
-      addDemoMessage("Memory demo failed", (error as Error).message);
-    }
-  }, [addDemoMessage, readApiResponse]);
-
   const agentName = `${userId}:${activeChatId}`;
   const gmailConnectionKey = gmailStatus.connected
     ? gmailStatus.email || "gmail-connected"
@@ -1433,8 +1047,6 @@ export default function App() {
                 editingChatId={editingChatId}
                 editingTitle={editingTitle}
                 editInputRef={editInputRef}
-                calendarDraft={calendarDraft}
-                updateCalendarDraft={updateCalendarDraft}
                 setEditingTitle={setEditingTitle}
                 createNewChat={createNewChat}
                 selectChat={selectChat}
@@ -1443,10 +1055,6 @@ export default function App() {
                 cancelEditingReview={cancelEditingReview}
                 deleteReview={deleteReview}
                 disconnectGmail={disconnectGmail}
-                runCalendarTodayDemo={runCalendarTodayDemo}
-                runCreateCalendarEventDemo={runCreateCalendarEventDemo}
-                runContactsSearchDemo={runContactsSearchDemo}
-                runMemoryDemo={runMemoryDemo}
               />
             </aside>
           </div>
@@ -1461,8 +1069,6 @@ export default function App() {
             editingChatId={editingChatId}
             editingTitle={editingTitle}
             editInputRef={editInputRef}
-            calendarDraft={calendarDraft}
-            updateCalendarDraft={updateCalendarDraft}
             setEditingTitle={setEditingTitle}
             createNewChat={createNewChat}
             selectChat={selectChat}
@@ -1471,10 +1077,6 @@ export default function App() {
             cancelEditingReview={cancelEditingReview}
             deleteReview={deleteReview}
             disconnectGmail={disconnectGmail}
-            runCalendarTodayDemo={runCalendarTodayDemo}
-            runCreateCalendarEventDemo={runCreateCalendarEventDemo}
-            runContactsSearchDemo={runContactsSearchDemo}
-            runMemoryDemo={runMemoryDemo}
           />
         </aside>
 
@@ -1484,8 +1086,6 @@ export default function App() {
           userId={userId}
           onMessageSent={updateActiveReview}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
-          demoMessages={demoMessages}
-          onClearDemoMessages={() => setDemoMessages([])}
         />
       </div>
     </Suspense>
