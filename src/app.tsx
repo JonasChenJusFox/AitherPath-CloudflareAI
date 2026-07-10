@@ -37,7 +37,10 @@ import {
   ImageIcon,
   PencilSimpleIcon,
   CheckIcon,
-  ListIcon
+  ListIcon,
+  CalendarBlankIcon,
+  AddressBookIcon,
+  DatabaseIcon
 } from "@phosphor-icons/react";
 
 // Image attachments are optional, but the helper keeps the message format small and predictable.
@@ -56,6 +59,20 @@ type GmailStatus = {
   connected: boolean;
   email?: string;
   placeholderEmail?: string;
+};
+
+type DemoMessage = {
+  id: string;
+  title: string;
+  body: string;
+};
+
+type ApiPayload = {
+  success?: boolean;
+  data?: unknown;
+  error?: {
+    message?: string;
+  };
 };
 
 interface Attachment {
@@ -124,6 +141,14 @@ function createAttachment(file: File): Attachment {
     preview: URL.createObjectURL(file),
     mediaType: file.type || "application/octet-stream"
   };
+}
+
+function formatJson(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function fileToDataUri(file: File): Promise<string> {
@@ -207,11 +232,15 @@ function ToolPartView({ part }: { part: UIMessage["parts"][number] }) {
 function Chat({
   agentName,
   onMessageSent,
-  onOpenSidebar
+  onOpenSidebar,
+  demoMessages,
+  onClearDemoMessages
 }: {
   agentName: string;
   onMessageSent: (text: string) => void;
   onOpenSidebar: () => void;
+  demoMessages: DemoMessage[];
+  onClearDemoMessages: () => void;
 }) {
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState("");
@@ -382,7 +411,10 @@ function Chat({
             <Button
               variant="secondary"
               icon={<TrashIcon size={16} />}
-              onClick={clearHistory}
+              onClick={() => {
+                clearHistory();
+                onClearDemoMessages();
+              }}
               className="hidden sm:inline-flex"
             >
               Clear
@@ -392,7 +424,10 @@ function Chat({
               shape="square"
               aria-label="Clear chat"
               icon={<TrashIcon size={16} />}
-              onClick={clearHistory}
+              onClick={() => {
+                clearHistory();
+                onClearDemoMessages();
+              }}
               className="sm:hidden"
             />
           </div>
@@ -548,6 +583,21 @@ function Chat({
             );
           })}
 
+          {demoMessages.map((message) => (
+            <div key={message.id} className="flex justify-start">
+              <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-kumo-base text-kumo-default leading-relaxed">
+                <div className="rounded-2xl rounded-bl-md p-3">
+                  <Text size="sm" bold>
+                    {message.title}
+                  </Text>
+                  <pre className="mt-2 whitespace-pre-wrap text-sm font-sans text-kumo-default">
+                    {message.body}
+                  </pre>
+                </div>
+              </div>
+            </div>
+          ))}
+
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -681,6 +731,10 @@ type SidebarContentProps = {
   cancelEditingReview: () => void;
   deleteReview: (reviewId: string) => void;
   disconnectGmail: () => void;
+  runCalendarTodayDemo: () => void;
+  runCreateCalendarEventDemo: () => void;
+  runContactsSearchDemo: () => void;
+  runMemoryDemo: () => void;
 };
 
 function SidebarContent({
@@ -698,7 +752,11 @@ function SidebarContent({
   saveEditingReview,
   cancelEditingReview,
   deleteReview,
-  disconnectGmail
+  disconnectGmail,
+  runCalendarTodayDemo,
+  runCreateCalendarEventDemo,
+  runContactsSearchDemo,
+  runMemoryDemo
 }: SidebarContentProps) {
   return (
     <>
@@ -805,6 +863,44 @@ function SidebarContent({
       </div>
 
       <div className="p-3 border-t border-kumo-line">
+        <div className="mb-3 space-y-2">
+          <Text size="xs" variant="secondary" bold>
+            Week 3 API demos
+          </Text>
+          <Button
+            variant="secondary"
+            icon={<CalendarBlankIcon size={16} />}
+            onClick={runCalendarTodayDemo}
+            className="w-full justify-center"
+          >
+            Today calendar
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<CalendarBlankIcon size={16} />}
+            onClick={runCreateCalendarEventDemo}
+            className="w-full justify-center"
+          >
+            Create event
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<AddressBookIcon size={16} />}
+            onClick={runContactsSearchDemo}
+            className="w-full justify-center"
+          >
+            Search contacts
+          </Button>
+          <Button
+            variant="secondary"
+            icon={<DatabaseIcon size={16} />}
+            onClick={runMemoryDemo}
+            className="w-full justify-center"
+          >
+            Save memory
+          </Button>
+        </div>
+
         <Button
           variant="secondary"
           onClick={() => {
@@ -840,6 +936,7 @@ export default function App() {
   const [userId] = useState(getOrCreateUserId);
   const [reviews, setReviews] = useState(() => loadChatReviews(userId));
   const [activeChatId, setActiveChatId] = useState(() => reviews[0].id);
+  const [demoMessages, setDemoMessages] = useState<DemoMessage[]>([]);
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>({
     configured: false,
     connected: false
@@ -852,6 +949,10 @@ export default function App() {
   useEffect(() => {
     saveChatReviews(userId, reviews);
   }, [userId, reviews]);
+
+  useEffect(() => {
+    setDemoMessages([]);
+  }, [activeChatId]);
 
   const refreshGmailStatus = useCallback(async () => {
     try {
@@ -972,6 +1073,127 @@ export default function App() {
     [activeChatId]
   );
 
+  const addDemoMessage = useCallback(
+    (title: string, body: string) => {
+      setDemoMessages((current) => [
+        ...current,
+        { id: createId("demo"), title, body }
+      ]);
+      updateActiveReview(title);
+      setMobileSidebarOpen(false);
+    },
+    [updateActiveReview]
+  );
+
+  const readApiResponse = useCallback(async (response: Response) => {
+    const payload = (await response.json()) as ApiPayload;
+    if (!response.ok || payload.success === false) {
+      const message =
+        payload.error?.message ||
+        "The API request failed. Try reconnecting Google first.";
+      throw new Error(message);
+    }
+    return payload.data;
+  }, []);
+
+  const runCalendarTodayDemo = useCallback(async () => {
+    try {
+      const timeZone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const data = await readApiResponse(
+        await fetch(
+          `/api/calendar/today?timeZone=${encodeURIComponent(timeZone)}&maxResults=10`
+        )
+      );
+      const events =
+        isRecord(data) && Array.isArray(data.events) ? data.events : [];
+      const body =
+        events.length === 0
+          ? `No events found today.\n\nRaw response:\n${formatJson(data)}`
+          : events
+              .map(
+                (event: { summary?: string; start?: string; end?: string }) =>
+                  `- ${event.summary || "(No title)"}\n  ${event.start || "No start"} → ${event.end || "No end"}`
+              )
+              .join("\n\n");
+      addDemoMessage("Calendar: today's events", body);
+    } catch (error) {
+      addDemoMessage("Calendar demo failed", (error as Error).message);
+    }
+  }, [addDemoMessage, readApiResponse]);
+
+  const runCreateCalendarEventDemo = useCallback(async () => {
+    const summary = window.prompt("Event title", "WorkingHelper demo event");
+    if (!summary) return;
+    const startDateTime = window.prompt(
+      "Start date-time",
+      "2026-07-15T14:00:00-04:00"
+    );
+    if (!startDateTime) return;
+    const endDateTime = window.prompt(
+      "End date-time",
+      "2026-07-15T14:30:00-04:00"
+    );
+    if (!endDateTime) return;
+
+    try {
+      const timeZone =
+        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const data = await readApiResponse(
+        await fetch("/api/calendar/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            summary,
+            startDateTime,
+            endDateTime,
+            timeZone,
+            sendUpdates: "none"
+          })
+        })
+      );
+      addDemoMessage("Calendar: event created", formatJson(data));
+    } catch (error) {
+      addDemoMessage("Create event failed", (error as Error).message);
+    }
+  }, [addDemoMessage, readApiResponse]);
+
+  const runContactsSearchDemo = useCallback(async () => {
+    const query = window.prompt("Contact keyword", "Jonas");
+    if (!query) return;
+
+    try {
+      const data = await readApiResponse(
+        await fetch(
+          `/api/contacts/search?q=${encodeURIComponent(query)}&pageSize=10`
+        )
+      );
+      addDemoMessage("Contacts search result", formatJson(data));
+    } catch (error) {
+      addDemoMessage("Contacts demo failed", (error as Error).message);
+    }
+  }, [addDemoMessage, readApiResponse]);
+
+  const runMemoryDemo = useCallback(async () => {
+    const key = window.prompt("Memory key", "job_search_goal");
+    if (!key) return;
+    const value = window.prompt("Memory value", "Frontend roles in New York");
+    if (!value) return;
+
+    try {
+      const data = await readApiResponse(
+        await fetch("/api/memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, value })
+        })
+      );
+      addDemoMessage("Memory saved", formatJson(data));
+    } catch (error) {
+      addDemoMessage("Memory demo failed", (error as Error).message);
+    }
+  }, [addDemoMessage, readApiResponse]);
+
   const agentName = `${userId}:${activeChatId}`;
   const gmailConnectionKey = gmailStatus.connected
     ? gmailStatus.email || "gmail-connected"
@@ -1023,6 +1245,10 @@ export default function App() {
                 cancelEditingReview={cancelEditingReview}
                 deleteReview={deleteReview}
                 disconnectGmail={disconnectGmail}
+                runCalendarTodayDemo={runCalendarTodayDemo}
+                runCreateCalendarEventDemo={runCreateCalendarEventDemo}
+                runContactsSearchDemo={runContactsSearchDemo}
+                runMemoryDemo={runMemoryDemo}
               />
             </aside>
           </div>
@@ -1045,6 +1271,10 @@ export default function App() {
             cancelEditingReview={cancelEditingReview}
             deleteReview={deleteReview}
             disconnectGmail={disconnectGmail}
+            runCalendarTodayDemo={runCalendarTodayDemo}
+            runCreateCalendarEventDemo={runCreateCalendarEventDemo}
+            runContactsSearchDemo={runContactsSearchDemo}
+            runMemoryDemo={runMemoryDemo}
           />
         </aside>
 
@@ -1053,6 +1283,8 @@ export default function App() {
           agentName={agentName}
           onMessageSent={updateActiveReview}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
+          demoMessages={demoMessages}
+          onClearDemoMessages={() => setDemoMessages([])}
         />
       </div>
     </Suspense>
