@@ -10,6 +10,11 @@ import { handleGoogleRoutes } from "./auth/googleRoutes";
 import { handleWeek3Routes } from "./routes/week3";
 import { listInboxMessages, sendGmailMessage } from "./google/gmail";
 import {
+  createCalendarEvent,
+  listTodayCalendarEvents
+} from "./google/calendar";
+import { searchContacts } from "./google/contacts";
+import {
   getGoogleOAuthConfig,
   refreshGoogleAccessToken
 } from "./auth/googleOAuth";
@@ -143,20 +148,25 @@ export class ChatAgent extends AIChatAgent<Env> {
   private async upsertMemory(request: Request) {
     this.ensureWeek3Tables();
     const input = memoryPostSchema.parse(await request.json());
+    return this.saveMemoryValue(input.key, input.value);
+  }
+
+  private saveMemoryValue(key: string, value: string) {
+    this.ensureWeek3Tables();
     const existing = this.sql<{ created_at: number }>`
-      SELECT created_at FROM session_memory WHERE key = ${input.key} LIMIT 1
+      SELECT created_at FROM session_memory WHERE key = ${key} LIMIT 1
     `;
     const now = Date.now();
     const createdAt = existing[0]?.created_at ?? now;
 
     this.sql`
       INSERT OR REPLACE INTO session_memory (key, value, created_at, updated_at)
-      VALUES (${input.key}, ${input.value}, ${createdAt}, ${now})
+      VALUES (${key}, ${value}, ${createdAt}, ${now})
     `;
 
     return {
-      key: input.key,
-      value: input.value,
+      key,
+      value,
       createdAt,
       updatedAt: now
     };
@@ -253,9 +263,13 @@ export class ChatAgent extends AIChatAgent<Env> {
       model: workersai("@cf/moonshotai/kimi-k2.6", {
         sessionAffinity: this.sessionAffinity
       }),
-      system: `You are WorkingHelper, an AI job search assistant. Help users search for jobs, understand job results, manage Gmail-related job search communication, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
+      system: `You are WorkingHelper, an AI job search assistant. Help users search for jobs, understand job results, manage Gmail-related job search communication, manage calendar events, search contacts, remember useful preferences, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
 
 You can use Gmail tools only when the user has connected Gmail. When a user asks to read recent inbox messages, use listGmailInbox. When a user explicitly asks you to send an email, use sendGmailEmail only after you have a recipient email address, a subject, and the complete body. If any of those details are missing, ask a short follow-up question instead of sending.
+
+You can use Google Calendar and Contacts tools only when the user has connected Google. When a user asks about today's schedule, meetings, or classes, use listTodayCalendarEvents. When a user explicitly asks you to create or schedule a calendar event, use createCalendarEvent only after you have an event title, start time, end time, and time zone. If details are missing, ask a short follow-up question. When a user asks to find a person's email, phone number, or contact details, use searchGoogleContacts.
+
+When a user says to remember a stable preference, goal, profile detail, or recurring context for later, use saveSessionMemory. Do not save secrets, passwords, tokens, or sensitive identity numbers.
 
 Keep answers concise and practical. If the job API returns no useful results, suggest how the user can broaden the search.`,
       // Prune old tool calls to save tokens on long conversations
@@ -355,6 +369,166 @@ Keep answers concise and practical. If the job API returns no useful results, su
               sent: true,
               messageId: result.id,
               threadId: result.threadId
+            };
+          }
+        }),
+        listTodayCalendarEvents: tool({
+          description:
+            "List today's Google Calendar events for the connected user. Use when the user asks about today's schedule, meetings, events, or classes.",
+          inputSchema: z.object({
+            timeZone: z
+              .string()
+              .describe(
+                "IANA time zone for the user's day, such as Asia/Shanghai or America/New_York"
+              ),
+            maxResults: z
+              .number()
+              .int()
+              .min(1)
+              .max(10)
+              .optional()
+              .describe("Maximum number of calendar events to return")
+          }),
+          execute: async ({ timeZone, maxResults }) => {
+            const accessToken = await this.getGmailAccessToken();
+
+            if (!accessToken) {
+              return {
+                error:
+                  "Google is not connected. Ask the user to click Connect Gmail first."
+              };
+            }
+
+            return {
+              events: await listTodayCalendarEvents(
+                accessToken,
+                timeZone.trim(),
+                maxResults ?? 10
+              )
+            };
+          }
+        }),
+        createCalendarEvent: tool({
+          description:
+            "Create a Google Calendar event for the connected user. Use only when the user explicitly asks to schedule or create an event and provides a title, start time, end time, and time zone.",
+          inputSchema: z.object({
+            summary: z.string().min(1).describe("Calendar event title"),
+            startDateTime: z
+              .string()
+              .datetime({ offset: true })
+              .describe(
+                "Event start time in RFC3339 format with offset, such as 2026-07-11T14:00:00+08:00"
+              ),
+            endDateTime: z
+              .string()
+              .datetime({ offset: true })
+              .describe(
+                "Event end time in RFC3339 format with offset, such as 2026-07-11T14:30:00+08:00"
+              ),
+            timeZone: z
+              .string()
+              .describe("IANA time zone, such as Asia/Shanghai"),
+            description: z
+              .string()
+              .optional()
+              .describe("Optional calendar event description"),
+            location: z.string().optional().describe("Optional event location"),
+            attendeeEmails: z
+              .array(z.email())
+              .max(20)
+              .optional()
+              .describe("Optional attendee email addresses")
+          }),
+          execute: async ({
+            summary,
+            startDateTime,
+            endDateTime,
+            timeZone,
+            description,
+            location,
+            attendeeEmails
+          }) => {
+            const accessToken = await this.getGmailAccessToken();
+
+            if (!accessToken) {
+              return {
+                error:
+                  "Google is not connected. Ask the user to click Connect Gmail first."
+              };
+            }
+
+            const event = await createCalendarEvent(accessToken, {
+              summary: summary.trim(),
+              startDateTime,
+              endDateTime,
+              timeZone: timeZone.trim(),
+              description: description?.trim(),
+              location: location?.trim(),
+              attendeeEmails,
+              sendUpdates: "none"
+            });
+
+            return {
+              created: true,
+              event
+            };
+          }
+        }),
+        searchGoogleContacts: tool({
+          description:
+            "Search the connected user's Google Contacts by name, email, company, or keyword. Use when the user asks for a person's email, phone number, or contact details.",
+          inputSchema: z.object({
+            query: z
+              .string()
+              .min(1)
+              .describe("Contact keyword, name, email, company, or phone text"),
+            pageSize: z
+              .number()
+              .int()
+              .min(1)
+              .max(10)
+              .optional()
+              .describe("Maximum contacts to return")
+          }),
+          execute: async ({ query, pageSize }) => {
+            const accessToken = await this.getGmailAccessToken();
+
+            if (!accessToken) {
+              return {
+                error:
+                  "Google is not connected. Ask the user to click Connect Gmail first."
+              };
+            }
+
+            return {
+              contacts: await searchContacts(
+                accessToken,
+                query.trim(),
+                pageSize ?? 10
+              )
+            };
+          }
+        }),
+        saveSessionMemory: tool({
+          description:
+            "Save a stable user preference, goal, or recurring context for future conversations. Do not save passwords, tokens, or sensitive identity numbers.",
+          inputSchema: z.object({
+            key: z
+              .string()
+              .regex(/^[a-zA-Z0-9:_-]{1,80}$/)
+              .describe(
+                "Short memory key, such as job_search_goal or preferred_location"
+              ),
+            value: z
+              .string()
+              .min(1)
+              .max(2000)
+              .describe("Memory value to remember for later")
+          }),
+          execute: async ({ key, value }) => {
+            return {
+              saved: true,
+              memory: this.saveMemoryValue(key, value)
             };
           }
         })
