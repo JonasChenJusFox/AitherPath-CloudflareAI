@@ -53,6 +53,18 @@ type GoogleEventsResponse = {
   nextPageToken?: string;
 };
 
+type GoogleApiErrorResponse = {
+  error?: {
+    code?: number;
+    message?: string;
+    status?: string;
+    errors?: Array<{
+      reason?: string;
+      message?: string;
+    }>;
+  };
+};
+
 function authHeaders(accessToken: string) {
   return {
     Authorization: `Bearer ${accessToken}`
@@ -85,14 +97,70 @@ async function calendarFetch<T>(
   });
 
   if (!response.ok) {
+    const details = await readGoogleApiError(response);
     throw new ApiError(
-      "CALENDAR_API_ERROR",
-      "Unable to communicate with Google Calendar.",
+      details.code,
+      details.message,
       response.status === 401 ? 401 : response.status
     );
   }
 
   return response.json<T>();
+}
+
+async function readGoogleApiError(response: Response) {
+  let googleError: GoogleApiErrorResponse | null = null;
+
+  try {
+    googleError = (await response.json()) as GoogleApiErrorResponse;
+  } catch {
+    // Google usually returns JSON errors, but keep a useful fallback for rare HTML/text responses.
+  }
+
+  const reasons = googleError?.error?.errors
+    ?.map((error) => error.reason)
+    .filter(Boolean);
+  const reasonText = reasons?.join(", ") || googleError?.error?.status || "";
+  const googleMessage = googleError?.error?.message || "";
+  const combined = `${reasonText} ${googleMessage}`.toLowerCase();
+
+  if (response.status === 401) {
+    return {
+      code: "REAUTHORIZATION_REQUIRED" as const,
+      message: "Google authorization expired. Please connect Google again."
+    };
+  }
+
+  if (
+    combined.includes("insufficient") ||
+    combined.includes("permission") ||
+    combined.includes("scope")
+  ) {
+    return {
+      code: "REAUTHORIZATION_REQUIRED" as const,
+      message:
+        "Google Calendar permission is missing. Click Switch Gmail and approve Calendar access again."
+    };
+  }
+
+  if (
+    combined.includes("api has not been used") ||
+    combined.includes("access not configured") ||
+    combined.includes("disabled")
+  ) {
+    return {
+      code: "CALENDAR_API_ERROR" as const,
+      message:
+        "Google Calendar API is not enabled for this Google Cloud project. Enable Google Calendar API, then try again."
+    };
+  }
+
+  return {
+    code: "CALENDAR_API_ERROR" as const,
+    message: googleMessage
+      ? `Google Calendar error: ${googleMessage}`
+      : "Unable to communicate with Google Calendar."
+  };
 }
 
 function assertTimeZone(timeZone: string) {
