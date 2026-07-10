@@ -41,6 +41,19 @@ type MemoryEntry = {
   updatedAt: number;
 };
 
+type MemorySaveResult =
+  | {
+      status: "none";
+    }
+  | {
+      status: "blocked";
+      reason: string;
+    }
+  | {
+      status: "saved";
+      memories: MemoryEntry[];
+    };
+
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
   chatRecovery = true;
@@ -275,10 +288,12 @@ export class ChatAgent extends AIChatAgent<Env> {
     return "";
   }
 
-  private async autoSaveExplicitMemory(text: string) {
+  private async autoSaveExplicitMemory(
+    text: string
+  ): Promise<MemorySaveResult> {
     const cleanText = text.trim();
     if (!/\b(remember|save this|save that|keep this)\b/i.test(cleanText)) {
-      return null;
+      return { status: "none" };
     }
 
     if (
@@ -286,7 +301,11 @@ export class ChatAgent extends AIChatAgent<Env> {
         cleanText
       )
     ) {
-      return null;
+      return {
+        status: "blocked",
+        reason:
+          "The user asked to save sensitive or secret information. Do not store it, and clearly tell the user it was not saved."
+      };
     }
 
     const rememberedText = cleanText
@@ -310,7 +329,7 @@ export class ChatAgent extends AIChatAgent<Env> {
       );
     }
 
-    return saved;
+    return { status: "saved", memories: saved };
   }
 
   override async fetch(request: Request) {
@@ -418,10 +437,16 @@ export class ChatAgent extends AIChatAgent<Env> {
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
     const workersai = createWorkersAI({ binding: this.env.AI });
     const today = new Date().toISOString().slice(0, 10);
-    const savedMemory = await this.autoSaveExplicitMemory(
+    const memorySaveResult = await this.autoSaveExplicitMemory(
       this.latestUserMessageText()
     );
     const memoryContext = await this.memoryContext();
+    const memorySaveInstruction =
+      memorySaveResult.status === "saved"
+        ? `This request explicitly asked you to remember something, and the server already saved it (${memorySaveResult.memories.map((memory) => memory.key).join(", ")}). Briefly confirm it without claiming a separate tool call.`
+        : memorySaveResult.status === "blocked"
+          ? memorySaveResult.reason
+          : "No automatic memory save happened for this request.";
 
     const result = streamText({
       model: workersai("@cf/moonshotai/kimi-k2.6", {
@@ -432,7 +457,10 @@ export class ChatAgent extends AIChatAgent<Env> {
 Saved user memory:
 ${memoryContext}
 
-If the user asks who they are, what you remember about them, or asks for profile details, answer from saved user memory when available. If this request explicitly asked you to remember something, it was already saved by the server${savedMemory ? ` (${savedMemory.map((memory) => memory.key).join(", ")})` : ""}; briefly confirm it without claiming a separate tool call.
+Current memory save status:
+${memorySaveInstruction}
+
+If the user asks who they are, what you remember about them, or asks for profile details, answer from saved user memory when available. Never claim that sensitive or secret information was saved when the current memory save status says it was blocked.
 
 You can use Gmail tools only when the user has connected Gmail. When a user asks to read recent inbox messages, use listGmailInbox. When a user explicitly asks you to send an email, use sendGmailEmail only after you have a recipient email address, a subject, and the complete body. If any of those details are missing, ask a short follow-up question instead of sending.
 
