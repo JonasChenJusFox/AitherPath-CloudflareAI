@@ -3,8 +3,13 @@ import type { GoogleOAuthConfig, GoogleTokenResponse } from "../types/google";
 export const PLACEHOLDER_EMAIL = "fishlikescat@gmail.com";
 
 const GMAIL_SCOPES = [
+  "openid",
+  "email",
+  "profile",
   "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send"
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/contacts.readonly"
 ];
 
 export function getGoogleOAuthConfig(env: Env): GoogleOAuthConfig | null {

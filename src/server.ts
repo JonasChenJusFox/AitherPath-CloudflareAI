@@ -7,6 +7,7 @@ import {
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { searchJobs } from "./jobSearch";
 import { handleGoogleRoutes } from "./auth/googleRoutes";
+import { handleWeek3Routes } from "./routes/week3";
 import { listInboxMessages, sendGmailMessage } from "./google/gmail";
 import {
   getGoogleOAuthConfig,
@@ -24,11 +25,202 @@ import {
   tool
 } from "ai";
 import { z } from "zod";
+import { memoryPostSchema, preferencesPatchSchema } from "./schemas/week3";
+import { ApiError, errorJson, getRequestId, successJson } from "./utils/api";
 
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
   chatRecovery = true;
   private gmailCookieHeader = "";
+
+  private ensureWeek3Tables() {
+    this.sql`
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        id TEXT PRIMARY KEY,
+        time_zone TEXT NOT NULL,
+        default_meeting_duration_minutes INTEGER NOT NULL,
+        default_calendar_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `;
+
+    this.sql`
+      CREATE TABLE IF NOT EXISTS session_memory (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `;
+  }
+
+  private getPreferences() {
+    this.ensureWeek3Tables();
+    const rows = this.sql<{
+      time_zone: string;
+      default_meeting_duration_minutes: number;
+      default_calendar_id: string;
+      created_at: number;
+      updated_at: number;
+    }>`SELECT * FROM user_preferences WHERE id = ${"default"} LIMIT 1`;
+
+    if (rows[0]) {
+      return {
+        timeZone: rows[0].time_zone,
+        defaultMeetingDurationMinutes: rows[0].default_meeting_duration_minutes,
+        defaultCalendarId: rows[0].default_calendar_id,
+        createdAt: rows[0].created_at,
+        updatedAt: rows[0].updated_at
+      };
+    }
+
+    const now = Date.now();
+    this.sql`
+      INSERT INTO user_preferences (
+        id,
+        time_zone,
+        default_meeting_duration_minutes,
+        default_calendar_id,
+        created_at,
+        updated_at
+      )
+      VALUES (${"default"}, ${"UTC"}, ${30}, ${"primary"}, ${now}, ${now})
+    `;
+
+    return {
+      timeZone: "UTC",
+      defaultMeetingDurationMinutes: 30,
+      defaultCalendarId: "primary",
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+
+  private async patchPreferences(request: Request) {
+    const current = this.getPreferences();
+    const input = preferencesPatchSchema.parse(await request.json());
+    const updated = {
+      timeZone: input.timeZone ?? current.timeZone,
+      defaultMeetingDurationMinutes:
+        input.defaultMeetingDurationMinutes ??
+        current.defaultMeetingDurationMinutes,
+      defaultCalendarId: input.defaultCalendarId ?? current.defaultCalendarId,
+      createdAt: current.createdAt,
+      updatedAt: Date.now()
+    };
+
+    this.sql`
+      UPDATE user_preferences
+      SET
+        time_zone = ${updated.timeZone},
+        default_meeting_duration_minutes = ${updated.defaultMeetingDurationMinutes},
+        default_calendar_id = ${updated.defaultCalendarId},
+        updated_at = ${updated.updatedAt}
+      WHERE id = ${"default"}
+    `;
+
+    return updated;
+  }
+
+  private listMemory() {
+    this.ensureWeek3Tables();
+    return this.sql<{
+      key: string;
+      value: string;
+      created_at: number;
+      updated_at: number;
+    }>`SELECT key, value, created_at, updated_at FROM session_memory ORDER BY updated_at DESC LIMIT 100`.map(
+      (row) => ({
+        key: row.key,
+        value: row.value,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      })
+    );
+  }
+
+  private async upsertMemory(request: Request) {
+    this.ensureWeek3Tables();
+    const input = memoryPostSchema.parse(await request.json());
+    const existing = this.sql<{ created_at: number }>`
+      SELECT created_at FROM session_memory WHERE key = ${input.key} LIMIT 1
+    `;
+    const now = Date.now();
+    const createdAt = existing[0]?.created_at ?? now;
+
+    this.sql`
+      INSERT OR REPLACE INTO session_memory (key, value, created_at, updated_at)
+      VALUES (${input.key}, ${input.value}, ${createdAt}, ${now})
+    `;
+
+    return {
+      key: input.key,
+      value: input.value,
+      createdAt,
+      updatedAt: now
+    };
+  }
+
+  override async fetch(request: Request) {
+    const url = new URL(request.url);
+    const requestId = getRequestId(request);
+
+    if (url.pathname.startsWith("/internal/week3/")) {
+      if (request.headers.get("X-WorkingHelper-Internal") !== "week3") {
+        return errorJson(
+          new ApiError("AUTHENTICATION_REQUIRED", "Internal route only.", 401),
+          requestId
+        );
+      }
+
+      try {
+        if (
+          url.pathname === "/internal/week3/preferences" &&
+          request.method === "GET"
+        ) {
+          return successJson(this.getPreferences());
+        }
+
+        if (
+          url.pathname === "/internal/week3/preferences" &&
+          request.method === "PATCH"
+        ) {
+          return successJson(await this.patchPreferences(request));
+        }
+
+        if (
+          url.pathname === "/internal/week3/memory" &&
+          request.method === "GET"
+        ) {
+          return successJson({ memories: this.listMemory() });
+        }
+
+        if (
+          url.pathname === "/internal/week3/memory" &&
+          request.method === "POST"
+        ) {
+          return successJson(await this.upsertMemory(request), { status: 201 });
+        }
+
+        return errorJson(
+          new ApiError("VALIDATION_ERROR", "Unsupported storage route.", 404),
+          requestId
+        );
+      } catch {
+        return errorJson(
+          new ApiError(
+            "STORAGE_ERROR",
+            "Unable to access session storage.",
+            500
+          ),
+          requestId
+        );
+      }
+    }
+
+    return super.fetch(request);
+  }
 
   onConnect(_connection: Connection, ctx: ConnectionContext) {
     // The WebSocket upgrade carries the same HttpOnly cookies as normal requests.
@@ -179,6 +371,9 @@ export default {
   async fetch(request: Request, env: Env) {
     const googleResponse = await handleGoogleRoutes(request, env);
     if (googleResponse) return googleResponse;
+
+    const week3Response = await handleWeek3Routes(request, env);
+    if (week3Response) return week3Response;
 
     return (
       (await routeAgentRequest(request, env)) ||

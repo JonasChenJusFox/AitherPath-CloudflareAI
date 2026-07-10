@@ -4,6 +4,7 @@ const ACCESS_TOKEN_COOKIE = "wh_google_access_token";
 const REFRESH_TOKEN_COOKIE = "wh_google_refresh_token";
 const OAUTH_STATE_COOKIE = "wh_google_oauth_state";
 const ONE_HOUR = 60 * 60;
+const TOKEN_REFRESH_BUFFER_SECONDS = 60;
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
 function readCookie(request: Request, name: string) {
@@ -54,11 +55,16 @@ export function createGoogleTokenCookies(tokens: GoogleTokenResponse) {
     createCookie(
       ACCESS_TOKEN_COOKIE,
       tokens.access_token,
-      Math.min(tokens.expires_in || ONE_HOUR, ONE_HOUR)
+      Math.max(
+        Math.min(tokens.expires_in || ONE_HOUR, ONE_HOUR) -
+          TOKEN_REFRESH_BUFFER_SECONDS,
+        60
+      )
     )
   ];
 
   if (tokens.refresh_token) {
+    // Preserve the existing refresh token when Google omits one on later exchanges.
     cookies.push(
       createCookie(REFRESH_TOKEN_COOKIE, tokens.refresh_token, THIRTY_DAYS)
     );
