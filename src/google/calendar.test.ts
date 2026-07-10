@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createCalendarEvent,
+  getDateBounds,
   getTodayBounds,
   listCalendarEvents
 } from "./calendar";
@@ -62,6 +63,13 @@ describe("calendar service", () => {
 
     expect(bounds.timeMin).toBe("2026-07-09T16:00:00.000Z");
     expect(bounds.timeMax).toBe("2026-07-10T16:00:00.000Z");
+  });
+
+  it("calculates boundaries for a specific calendar date", () => {
+    const bounds = getDateBounds("2026-07-12", "America/New_York");
+
+    expect(bounds.timeMin).toBe("2026-07-12T04:00:00.000Z");
+    expect(bounds.timeMax).toBe("2026-07-13T04:00:00.000Z");
   });
 
   it("rejects event creation when the end is before the start", async () => {

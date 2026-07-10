@@ -225,6 +225,28 @@ function zonedDateTimeToUtcIso(
 export function getTodayBounds(timeZone: string, now = new Date()) {
   assertTimeZone(timeZone);
   const parts = partsInTimeZone(now, timeZone);
+  return getDateBounds(
+    `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`,
+    timeZone
+  );
+}
+
+export function getDateBounds(date: string, timeZone: string) {
+  assertTimeZone(timeZone);
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    throw new ApiError(
+      "VALIDATION_ERROR",
+      "Date must use YYYY-MM-DD format.",
+      400
+    );
+  }
+
+  const parts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3])
+  };
   const start = zonedDateTimeToUtcIso(
     parts.year,
     parts.month,
@@ -278,6 +300,20 @@ export async function listTodayCalendarEvents(
   maxResults?: number
 ) {
   const bounds = getTodayBounds(timeZone);
+  return listCalendarEvents(accessToken, {
+    ...bounds,
+    timeZone,
+    maxResults
+  });
+}
+
+export async function listCalendarEventsForDate(
+  accessToken: string,
+  date: string,
+  timeZone: string,
+  maxResults?: number
+) {
+  const bounds = getDateBounds(date, timeZone);
   return listCalendarEvents(accessToken, {
     ...bounds,
     timeZone,

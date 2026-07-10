@@ -11,6 +11,7 @@ import { handleWeek3Routes } from "./routes/week3";
 import { listInboxMessages, sendGmailMessage } from "./google/gmail";
 import {
   createCalendarEvent,
+  listCalendarEventsForDate,
   listTodayCalendarEvents
 } from "./google/calendar";
 import { searchContacts } from "./google/contacts";
@@ -270,16 +271,17 @@ export class ChatAgent extends AIChatAgent<Env> {
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
     const workersai = createWorkersAI({ binding: this.env.AI });
+    const today = new Date().toISOString().slice(0, 10);
 
     const result = streamText({
       model: workersai("@cf/moonshotai/kimi-k2.6", {
         sessionAffinity: this.sessionAffinity
       }),
-      system: `You are WorkingHelper, an AI job search assistant. Help users search for jobs, understand job results, manage Gmail-related job search communication, manage calendar events, search contacts, remember useful preferences, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
+      system: `You are WorkingHelper, an AI job search assistant. Today's date is ${today} in UTC. Help users search for jobs, understand job results, manage Gmail-related job search communication, manage calendar events, search contacts, remember useful preferences, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
 
 You can use Gmail tools only when the user has connected Gmail. When a user asks to read recent inbox messages, use listGmailInbox. When a user explicitly asks you to send an email, use sendGmailEmail only after you have a recipient email address, a subject, and the complete body. If any of those details are missing, ask a short follow-up question instead of sending.
 
-You can use Google Calendar and Contacts tools only when the user has connected Google. When a user asks about today's schedule, meetings, or classes, use listTodayCalendarEvents. When a user explicitly asks you to create or schedule a calendar event, use createCalendarEvent only after you have an event title, start time, end time, and time zone. If details are missing, ask a short follow-up question. When a user asks to find a person's email, phone number, or contact details, use searchGoogleContacts.
+You can use Google Calendar and Contacts tools only when the user has connected Google. When a user asks about today's schedule, meetings, or classes, use listTodayCalendarEvents. When a user asks about a specific date, tomorrow, this weekend, or another relative calendar date, resolve it to a YYYY-MM-DD date and use listCalendarEventsByDate. For example, if today is 2026-07-11, tomorrow is 2026-07-12. When a user explicitly asks you to create or schedule a calendar event, use createCalendarEvent only after you have an event title, start time, end time, and time zone. If details are missing, ask a short follow-up question. When a user asks to find a person's email, phone number, or contact details, use searchGoogleContacts.
 
 When a user says to remember a stable preference, goal, profile detail, or recurring context for later, use saveSessionMemory. Do not save secrets, passwords, tokens, or sensitive identity numbers.
 
@@ -414,6 +416,48 @@ Keep answers concise and practical. If the job API returns no useful results, su
             return {
               events: await listTodayCalendarEvents(
                 accessToken,
+                timeZone.trim(),
+                maxResults ?? 10
+              )
+            };
+          }
+        }),
+        listCalendarEventsByDate: tool({
+          description:
+            "List Google Calendar events for a specific calendar date. Use when the user asks for tomorrow, a date like July 12, or any non-today schedule query.",
+          inputSchema: z.object({
+            date: z
+              .string()
+              .regex(/^\d{4}-\d{2}-\d{2}$/)
+              .describe("Calendar date to query in YYYY-MM-DD format"),
+            timeZone: z
+              .string()
+              .describe(
+                "IANA time zone for the requested day, such as Asia/Shanghai or America/New_York"
+              ),
+            maxResults: z
+              .number()
+              .int()
+              .min(1)
+              .max(20)
+              .optional()
+              .describe("Maximum number of calendar events to return")
+          }),
+          execute: async ({ date, timeZone, maxResults }) => {
+            const accessToken = await this.getGmailAccessToken();
+
+            if (!accessToken) {
+              return {
+                error:
+                  "Google is not connected. Ask the user to click Connect Gmail first."
+              };
+            }
+
+            return {
+              date,
+              events: await listCalendarEventsForDate(
+                accessToken,
+                date,
                 timeZone.trim(),
                 maxResults ?? 10
               )
