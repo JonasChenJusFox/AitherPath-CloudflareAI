@@ -14,7 +14,7 @@ import {
   listCalendarEventsForDate,
   listTodayCalendarEvents
 } from "./google/calendar";
-import { searchContacts } from "./google/contacts";
+import { listContacts, searchContacts } from "./google/contacts";
 import {
   getGoogleOAuthConfig,
   refreshGoogleAccessToken
@@ -281,7 +281,7 @@ export class ChatAgent extends AIChatAgent<Env> {
 
 You can use Gmail tools only when the user has connected Gmail. When a user asks to read recent inbox messages, use listGmailInbox. When a user explicitly asks you to send an email, use sendGmailEmail only after you have a recipient email address, a subject, and the complete body. If any of those details are missing, ask a short follow-up question instead of sending.
 
-You can use Google Calendar and Contacts tools only when the user has connected Google. When a user asks about today's schedule, meetings, or classes, use listTodayCalendarEvents. When a user asks about a specific date, tomorrow, this weekend, or another relative calendar date, resolve it to a YYYY-MM-DD date and use listCalendarEventsByDate. For example, if today is 2026-07-11, tomorrow is 2026-07-12. When a user explicitly asks you to create or schedule a calendar event, use createCalendarEvent only after you have an event title, start time, end time, and time zone. If details are missing, ask a short follow-up question. When a user asks to find a person's email, phone number, or contact details, use searchGoogleContacts.
+You can use Google Calendar and Contacts tools only when the user has connected Google. When a user asks about today's schedule, meetings, or classes, use listTodayCalendarEvents. When a user asks about a specific date, tomorrow, this weekend, or another relative calendar date, resolve it to a YYYY-MM-DD date and use listCalendarEventsByDate. For example, if today is 2026-07-11, tomorrow is 2026-07-12. When a user explicitly asks you to create or schedule a calendar event, use createCalendarEvent only after you have an event title, start time, end time, and time zone. If details are missing, ask a short follow-up question. When a user asks who is in their contacts list, use listGoogleContacts. When a user asks to find a person's email, phone number, or contact details, use searchGoogleContacts.
 
 When a user says to remember a stable preference, goal, profile detail, or recurring context for later, use saveSessionMemory. Do not save secrets, passwords, tokens, or sensitive identity numbers.
 
@@ -562,6 +562,33 @@ Keep answers concise and practical. If the job API returns no useful results, su
                 query.trim(),
                 pageSize ?? 10
               )
+            };
+          }
+        }),
+        listGoogleContacts: tool({
+          description:
+            "List the connected user's Google Contacts. Use when the user asks who is in their contacts list.",
+          inputSchema: z.object({
+            pageSize: z
+              .number()
+              .int()
+              .min(1)
+              .max(20)
+              .optional()
+              .describe("Maximum contacts to return")
+          }),
+          execute: async ({ pageSize }) => {
+            const accessToken = await this.getGmailAccessToken();
+
+            if (!accessToken) {
+              return {
+                error:
+                  "Google is not connected. Ask the user to click Connect Gmail first."
+              };
+            }
+
+            return {
+              contacts: await listContacts(accessToken, pageSize ?? 10)
             };
           }
         }),
