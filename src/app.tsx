@@ -151,6 +151,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function toDatetimeLocalValue(date: Date) {
+  const offsetMs = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
 function fileToDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1125,14 +1130,17 @@ export default function App() {
   const runCreateCalendarEventDemo = useCallback(async () => {
     const summary = window.prompt("Event title", "WorkingHelper demo event");
     if (!summary) return;
+    const defaultStart = new Date();
+    defaultStart.setHours(defaultStart.getHours() + 1, 0, 0, 0);
+    const defaultEnd = new Date(defaultStart.getTime() + 30 * 60_000);
     const startDateTime = window.prompt(
       "Start date-time",
-      "2026-07-15T14:00:00-04:00"
+      toDatetimeLocalValue(defaultStart)
     );
     if (!startDateTime) return;
     const endDateTime = window.prompt(
       "End date-time",
-      "2026-07-15T14:30:00-04:00"
+      toDatetimeLocalValue(defaultEnd)
     );
     if (!endDateTime) return;
 

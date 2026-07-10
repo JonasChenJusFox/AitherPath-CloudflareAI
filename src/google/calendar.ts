@@ -234,14 +234,10 @@ export function getTodayBounds(timeZone: string, now = new Date()) {
     0,
     timeZone
   );
-  const nextDay = new Date(
-    Date.UTC(parts.year, parts.month - 1, parts.day + 1)
-  );
-  const nextParts = partsInTimeZone(nextDay, "UTC");
   const end = zonedDateTimeToUtcIso(
-    nextParts.year,
-    nextParts.month,
-    nextParts.day,
+    parts.year,
+    parts.month,
+    parts.day + 1,
     0,
     0,
     0,

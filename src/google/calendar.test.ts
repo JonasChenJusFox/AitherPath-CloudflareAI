@@ -54,6 +54,16 @@ describe("calendar service", () => {
     expect(bounds.timeMax).toBe("2026-07-11T04:00:00.000Z");
   });
 
+  it("calculates today's boundaries for positive UTC offsets", () => {
+    const bounds = getTodayBounds(
+      "Asia/Shanghai",
+      new Date("2026-07-10T15:00:00.000Z")
+    );
+
+    expect(bounds.timeMin).toBe("2026-07-09T16:00:00.000Z");
+    expect(bounds.timeMax).toBe("2026-07-10T16:00:00.000Z");
+  });
+
   it("rejects event creation when the end is before the start", async () => {
     await expect(
       createCalendarEvent("token", {
