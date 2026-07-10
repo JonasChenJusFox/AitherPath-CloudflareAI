@@ -67,6 +67,13 @@ type DemoMessage = {
   body: string;
 };
 
+type CalendarEventDraft = {
+  summary: string;
+  startDateTime: string;
+  endDateTime: string;
+  timeZone: string;
+};
+
 type ApiPayload = {
   success?: boolean;
   data?: unknown;
@@ -154,6 +161,98 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function toDatetimeLocalValue(date: Date) {
   const offsetMs = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function createDefaultCalendarDraft(): CalendarEventDraft {
+  const start = new Date();
+  start.setHours(start.getHours() + 1, 0, 0, 0);
+  const end = new Date(start.getTime() + 30 * 60_000);
+
+  return {
+    summary: "WorkingHelper demo event",
+    startDateTime: toDatetimeLocalValue(start),
+    endDateTime: toDatetimeLocalValue(end),
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+  };
+}
+
+function getTimeZoneOptions(currentTimeZone: string) {
+  return Array.from(
+    new Set([
+      currentTimeZone,
+      "UTC",
+      "America/New_York",
+      "America/Los_Angeles",
+      "Asia/Shanghai",
+      "Europe/London"
+    ])
+  );
+}
+
+function parseDatetimeLocal(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return null;
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5])
+  };
+}
+
+function partsInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(map.get("year")),
+    month: Number(map.get("month")),
+    day: Number(map.get("day")),
+    hour: Number(map.get("hour")),
+    minute: Number(map.get("minute")),
+    second: Number(map.get("second"))
+  };
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string) {
+  const parts = partsInTimeZone(date, timeZone);
+  const localAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  );
+  return localAsUtc - date.getTime();
+}
+
+function toZonedIso(datetimeLocal: string, timeZone: string) {
+  const parts = parseDatetimeLocal(datetimeLocal);
+  if (!parts) throw new Error("Choose a valid date and time.");
+
+  const guess = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    0
+  );
+  const first = guess - getTimeZoneOffsetMs(new Date(guess), timeZone);
+  const corrected = guess - getTimeZoneOffsetMs(new Date(first), timeZone);
+  return new Date(corrected).toISOString();
 }
 
 function fileToDataUri(file: File): Promise<string> {
@@ -728,6 +827,8 @@ type SidebarContentProps = {
   editingChatId: string | null;
   editingTitle: string;
   editInputRef: RefObject<HTMLInputElement | null>;
+  calendarDraft: CalendarEventDraft;
+  updateCalendarDraft: (patch: Partial<CalendarEventDraft>) => void;
   setEditingTitle: (title: string) => void;
   createNewChat: () => void;
   selectChat: (chatId: string) => void;
@@ -750,6 +851,8 @@ function SidebarContent({
   editingChatId,
   editingTitle,
   editInputRef,
+  calendarDraft,
+  updateCalendarDraft,
   setEditingTitle,
   createNewChat,
   selectChat,
@@ -888,6 +991,56 @@ function SidebarContent({
           >
             Create event
           </Button>
+          <div className="space-y-2 rounded-lg border border-kumo-line p-2">
+            <label className="block text-xs font-medium text-kumo-subtle">
+              Event title
+              <input
+                value={calendarDraft.summary}
+                onChange={(event) =>
+                  updateCalendarDraft({ summary: event.target.value })
+                }
+                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
+              />
+            </label>
+            <label className="block text-xs font-medium text-kumo-subtle">
+              Start
+              <input
+                type="datetime-local"
+                value={calendarDraft.startDateTime}
+                onChange={(event) =>
+                  updateCalendarDraft({ startDateTime: event.target.value })
+                }
+                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
+              />
+            </label>
+            <label className="block text-xs font-medium text-kumo-subtle">
+              End
+              <input
+                type="datetime-local"
+                value={calendarDraft.endDateTime}
+                onChange={(event) =>
+                  updateCalendarDraft({ endDateTime: event.target.value })
+                }
+                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
+              />
+            </label>
+            <label className="block text-xs font-medium text-kumo-subtle">
+              Time zone
+              <select
+                value={calendarDraft.timeZone}
+                onChange={(event) =>
+                  updateCalendarDraft({ timeZone: event.target.value })
+                }
+                className="mt-1 w-full rounded-md border border-kumo-line bg-kumo-base px-2 py-1.5 text-sm text-kumo-default outline-none focus:border-kumo-brand"
+              >
+                {getTimeZoneOptions(calendarDraft.timeZone).map((timeZone) => (
+                  <option key={timeZone} value={timeZone}>
+                    {timeZone}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <Button
             variant="secondary"
             icon={<AddressBookIcon size={16} />}
@@ -942,6 +1095,9 @@ export default function App() {
   const [reviews, setReviews] = useState(() => loadChatReviews(userId));
   const [activeChatId, setActiveChatId] = useState(() => reviews[0].id);
   const [demoMessages, setDemoMessages] = useState<DemoMessage[]>([]);
+  const [calendarDraft, setCalendarDraft] = useState(
+    createDefaultCalendarDraft
+  );
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>({
     configured: false,
     connected: false
@@ -1101,6 +1257,13 @@ export default function App() {
     return payload.data;
   }, []);
 
+  const updateCalendarDraft = useCallback(
+    (patch: Partial<CalendarEventDraft>) => {
+      setCalendarDraft((current) => ({ ...current, ...patch }));
+    },
+    []
+  );
+
   const runCalendarTodayDemo = useCallback(async () => {
     try {
       const timeZone =
@@ -1128,25 +1291,18 @@ export default function App() {
   }, [addDemoMessage, readApiResponse]);
 
   const runCreateCalendarEventDemo = useCallback(async () => {
-    const summary = window.prompt("Event title", "WorkingHelper demo event");
-    if (!summary) return;
-    const defaultStart = new Date();
-    defaultStart.setHours(defaultStart.getHours() + 1, 0, 0, 0);
-    const defaultEnd = new Date(defaultStart.getTime() + 30 * 60_000);
-    const startDateTime = window.prompt(
-      "Start date-time",
-      toDatetimeLocalValue(defaultStart)
-    );
-    if (!startDateTime) return;
-    const endDateTime = window.prompt(
-      "End date-time",
-      toDatetimeLocalValue(defaultEnd)
-    );
-    if (!endDateTime) return;
-
     try {
-      const timeZone =
-        Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const summary = calendarDraft.summary.replace(/\s+/g, " ").trim();
+      if (!summary) throw new Error("Enter an event title.");
+
+      const startDateTime = toZonedIso(
+        calendarDraft.startDateTime,
+        calendarDraft.timeZone
+      );
+      const endDateTime = toZonedIso(
+        calendarDraft.endDateTime,
+        calendarDraft.timeZone
+      );
       const data = await readApiResponse(
         await fetch("/api/calendar/events", {
           method: "POST",
@@ -1155,7 +1311,7 @@ export default function App() {
             summary,
             startDateTime,
             endDateTime,
-            timeZone,
+            timeZone: calendarDraft.timeZone,
             sendUpdates: "none"
           })
         })
@@ -1164,7 +1320,7 @@ export default function App() {
     } catch (error) {
       addDemoMessage("Create event failed", (error as Error).message);
     }
-  }, [addDemoMessage, readApiResponse]);
+  }, [addDemoMessage, calendarDraft, readApiResponse]);
 
   const runContactsSearchDemo = useCallback(async () => {
     const query = window.prompt("Contact keyword", "Jonas");
@@ -1245,6 +1401,8 @@ export default function App() {
                 editingChatId={editingChatId}
                 editingTitle={editingTitle}
                 editInputRef={editInputRef}
+                calendarDraft={calendarDraft}
+                updateCalendarDraft={updateCalendarDraft}
                 setEditingTitle={setEditingTitle}
                 createNewChat={createNewChat}
                 selectChat={selectChat}
@@ -1271,6 +1429,8 @@ export default function App() {
             editingChatId={editingChatId}
             editingTitle={editingTitle}
             editInputRef={editInputRef}
+            calendarDraft={calendarDraft}
+            updateCalendarDraft={updateCalendarDraft}
             setEditingTitle={setEditingTitle}
             createNewChat={createNewChat}
             selectChat={selectChat}
