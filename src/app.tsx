@@ -335,12 +335,14 @@ function ToolPartView({ part }: { part: UIMessage["parts"][number] }) {
 
 function Chat({
   agentName,
+  userId,
   onMessageSent,
   onOpenSidebar,
   demoMessages,
   onClearDemoMessages
 }: {
   agentName: string;
+  userId: string;
   onMessageSent: (text: string) => void;
   onOpenSidebar: () => void;
   demoMessages: DemoMessage[];
@@ -376,12 +378,16 @@ function Chat({
     try {
       await fetch(
         `/api/agent/auth-sync?name=${encodeURIComponent(agentName)}`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ memoryOwnerName: userId })
+        }
       );
     } catch (error) {
       console.error("Failed to sync agent auth:", error);
     }
-  }, [agentName]);
+  }, [agentName, userId]);
 
   const sendTextPrompt = useCallback(
     async (text: string) => {
@@ -1475,6 +1481,7 @@ export default function App() {
         <Chat
           key={`${activeChatId}:${gmailConnectionKey}`}
           agentName={agentName}
+          userId={userId}
           onMessageSent={updateActiveReview}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
           demoMessages={demoMessages}

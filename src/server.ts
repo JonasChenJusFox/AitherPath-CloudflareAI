@@ -34,10 +34,18 @@ import { z } from "zod";
 import { memoryPostSchema, preferencesPatchSchema } from "./schemas/week3";
 import { ApiError, errorJson, getRequestId, successJson } from "./utils/api";
 
+type MemoryEntry = {
+  key: string;
+  value: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
   chatRecovery = true;
   private gmailCookieHeader = "";
+  private memoryOwnerName = "";
 
   private ensureWeek3Tables() {
     this.sql`
@@ -173,8 +181,57 @@ export class ChatAgent extends AIChatAgent<Env> {
     };
   }
 
-  private memoryContext() {
-    const memories = this.listMemory();
+  private async listSharedMemory() {
+    if (!this.memoryOwnerName) {
+      return this.listMemory();
+    }
+
+    const agentId = this.env.ChatAgent.idFromName(
+      `memory:${this.memoryOwnerName}`
+    );
+    const agent = this.env.ChatAgent.get(agentId);
+    const response = await agent.fetch(
+      new Request("https://workinghelper.com/internal/week3/memory", {
+        headers: {
+          "X-WorkingHelper-Internal": "week3"
+        }
+      })
+    );
+    const payload = await response.json<{
+      data?: { memories?: MemoryEntry[] };
+    }>();
+
+    return payload.data?.memories || [];
+  }
+
+  private async saveSharedMemoryValue(key: string, value: string) {
+    if (!this.memoryOwnerName) {
+      return this.saveMemoryValue(key, value);
+    }
+
+    const agentId = this.env.ChatAgent.idFromName(
+      `memory:${this.memoryOwnerName}`
+    );
+    const agent = this.env.ChatAgent.get(agentId);
+    const response = await agent.fetch(
+      new Request("https://workinghelper.com/internal/week3/memory", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-WorkingHelper-Internal": "week3"
+        },
+        body: JSON.stringify({ key, value })
+      })
+    );
+    const payload = await response.json<{
+      data?: MemoryEntry;
+    }>();
+
+    return payload.data || this.saveMemoryValue(key, value);
+  }
+
+  private async memoryContext() {
+    const memories = await this.listSharedMemory();
 
     if (memories.length === 0) {
       return "No saved user memory yet.";
@@ -218,7 +275,7 @@ export class ChatAgent extends AIChatAgent<Env> {
     return "";
   }
 
-  private autoSaveExplicitMemory(text: string) {
+  private async autoSaveExplicitMemory(text: string) {
     const cleanText = text.trim();
     if (!/\b(remember|save this|save that|keep this)\b/i.test(cleanText)) {
       return null;
@@ -238,14 +295,19 @@ export class ChatAgent extends AIChatAgent<Env> {
       .trim();
 
     const saved = [
-      this.saveMemoryValue("profile:summary", rememberedText || cleanText)
+      await this.saveSharedMemoryValue(
+        "profile:summary",
+        rememberedText || cleanText
+      )
     ];
 
     const nameMatch = rememberedText.match(
       /\bmy name is\s+([A-Za-z][A-Za-z\s.'-]{1,80})/i
     );
     if (nameMatch?.[1]) {
-      saved.push(this.saveMemoryValue("profile:name", nameMatch[1].trim()));
+      saved.push(
+        await this.saveSharedMemoryValue("profile:name", nameMatch[1].trim())
+      );
     }
 
     return saved;
@@ -264,6 +326,12 @@ export class ChatAgent extends AIChatAgent<Env> {
       }
 
       this.gmailCookieHeader = request.headers.get("Cookie") || "";
+      try {
+        const body = await request.json<{ memoryOwnerName?: string }>();
+        this.memoryOwnerName = body.memoryOwnerName?.trim() || "";
+      } catch {
+        this.memoryOwnerName = "";
+      }
       return successJson({ synced: Boolean(this.gmailCookieHeader) });
     }
 
@@ -350,10 +418,10 @@ export class ChatAgent extends AIChatAgent<Env> {
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
     const workersai = createWorkersAI({ binding: this.env.AI });
     const today = new Date().toISOString().slice(0, 10);
-    const savedMemory = this.autoSaveExplicitMemory(
+    const savedMemory = await this.autoSaveExplicitMemory(
       this.latestUserMessageText()
     );
-    const memoryContext = this.memoryContext();
+    const memoryContext = await this.memoryContext();
 
     const result = streamText({
       model: workersai("@cf/moonshotai/kimi-k2.6", {
@@ -698,7 +766,7 @@ Keep answers concise and practical. If the job API returns no useful results, su
           execute: async ({ key, value }) => {
             return {
               saved: true,
-              memory: this.saveMemoryValue(key, value)
+              memory: await this.saveSharedMemoryValue(key, value)
             };
           }
         })
@@ -728,14 +796,23 @@ export default {
       const agent = env.ChatAgent.get(agentId);
       const syncUrl = new URL(request.url);
       syncUrl.pathname = "/internal/auth-sync";
+      let memoryOwnerName = agentName.split(":")[0] || "";
+      try {
+        const body = await request.clone().json<{ memoryOwnerName?: string }>();
+        memoryOwnerName = body.memoryOwnerName?.trim() || memoryOwnerName;
+      } catch {
+        // The agent name contains the local user id as a fallback.
+      }
 
       return agent.fetch(
         new Request(syncUrl.toString(), {
           method: "POST",
           headers: {
+            "Content-Type": "application/json",
             Cookie: request.headers.get("Cookie") || "",
             "X-WorkingHelper-Internal": "auth-sync"
-          }
+          },
+          body: JSON.stringify({ memoryOwnerName })
         })
       );
     }
