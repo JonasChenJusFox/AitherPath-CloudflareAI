@@ -54,6 +54,23 @@ type MemorySaveResult =
       memories: MemoryEntry[];
     };
 
+function redirectToCanonicalUrl(request: Request) {
+  const url = new URL(request.url);
+  let shouldRedirect = false;
+
+  if (url.protocol === "http:") {
+    url.protocol = "https:";
+    shouldRedirect = true;
+  }
+
+  if (url.hostname === "www.workinghelper.com") {
+    url.hostname = "workinghelper.com";
+    shouldRedirect = true;
+  }
+
+  return shouldRedirect ? Response.redirect(url.toString(), 301) : null;
+}
+
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
   chatRecovery = true;
@@ -809,6 +826,9 @@ Keep answers concise and practical. If the job API returns no useful results, su
 
 export default {
   async fetch(request: Request, env: Env) {
+    const canonicalRedirect = redirectToCanonicalUrl(request);
+    if (canonicalRedirect) return canonicalRedirect;
+
     const url = new URL(request.url);
 
     if (url.pathname === "/api/agent/auth-sync" && request.method === "POST") {
