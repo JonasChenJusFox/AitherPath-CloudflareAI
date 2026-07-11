@@ -871,9 +871,13 @@ export default {
     const week3Response = await handleWeek3Routes(request, env);
     if (week3Response) return week3Response;
 
-    return (
-      (await routeAgentRequest(request, env)) ||
-      new Response("Not found", { status: 404 })
-    );
+    const agentResponse = await routeAgentRequest(request, env);
+    if (agentResponse) return agentResponse;
+
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) {
+      return new Response("Not found", { status: 404 });
+    }
+
+    return env.ASSETS.fetch(request);
   }
 } satisfies ExportedHandler<Env>;

@@ -7,6 +7,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		AI: Ai;
+		ASSETS: Fetcher;
 		ChatAgent: DurableObjectNamespace<import("./src/server").ChatAgent>;
 		JOOBLE_API_KEY?: string;
 		GOOGLE_CLIENT_ID?: string;
