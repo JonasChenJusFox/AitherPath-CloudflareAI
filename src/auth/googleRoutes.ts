@@ -41,6 +41,19 @@ function getMissingGoogleConfigResponse() {
   );
 }
 
+function getInvalidOAuthStateResponse() {
+  const response = json(
+    {
+      error: "Invalid Google OAuth callback state.",
+      message:
+        "The Google login was started from a different browser profile, expired, or was restarted in another tab. Open WorkingHelper and click Connect Gmail again in the same browser profile."
+    },
+    { status: 400 }
+  );
+  response.headers.append("Set-Cookie", clearOAuthStateCookie());
+  return response;
+}
+
 async function getUsableAccessToken(request: Request, env: Env) {
   const accessToken = getGoogleAccessToken(request);
   if (accessToken) {
@@ -195,10 +208,7 @@ export async function handleGoogleRoutes(request: Request, env: Env) {
 
     // Reject callbacks that do not match the state created before redirecting.
     if (!code || !state || state !== savedState) {
-      return json(
-        { error: "Invalid Google OAuth callback state." },
-        { status: 400 }
-      );
+      return getInvalidOAuthStateResponse();
     }
 
     const tokens = await exchangeCodeForTokens(config, code);
