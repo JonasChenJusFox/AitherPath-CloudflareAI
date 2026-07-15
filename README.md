@@ -1,13 +1,19 @@
-# WorkingHelper
+# NextRole
 
-WorkingHelper is a Cloudflare AI job search agent. Users chat with the assistant, and the agent can call real tools backed by the Jooble and Google APIs.
+**NextRole by AitherPath** is an AI career copilot built on Cloudflare. Users chat with NextRole to find current opportunities and coordinate the communication, calendar events, contacts, and preferences around their job search. The agent calls real tools backed by the Jooble and Google APIs.
+
+- Product: **NextRole**
+- Company: **AitherPath**
+- Repository: **AitherPath-CloudflareAI**
 
 The Week 3 foundation adds Google Calendar, Google Contacts through People API, and persistent per-user preferences/session memory on top of the completed job search and Gmail features.
 
-## Live URLs
+## Deployment URLs
 
-- Current Agent Worker: `https://workinghelper-agent.jonas-aitherpath.workers.dev`
+- Agent Worker: `https://workinghelper-agent.jonas-aitherpath.workers.dev`
 - Production domain: `https://workinghelper.com`
+
+The repository, Worker name, and production domain intentionally keep their existing technical identifiers. NextRole is the user-facing product name.
 
 ## Tech Stack
 
@@ -170,7 +176,7 @@ Required Google Cloud setup:
 
 ```text
 Google Cloud Console
-→ Create/select project: WorkingHelper
+→ Create/select project: NextRole by AitherPath
 → Enable Gmail API
 → Enable Google Calendar API
 → Enable People API
@@ -212,7 +218,7 @@ Send a test email from the command line after connecting Gmail in the browser:
 
 ```bash
 WORKINGHELPER_COOKIE='paste_the_workinghelper_cookie_header_here' \
-  npm run send:test-email -- recipient@example.com "WorkingHelper test" "Hello from WorkingHelper."
+  npm run send:test-email -- recipient@example.com "NextRole test" "Hello from NextRole by AitherPath."
 ```
 
 The script calls `POST /api/gmail/send`, so it uses the same Gmail OAuth flow as the web app.
@@ -290,7 +296,7 @@ The deployed Worker uses:
 
 ## Custom Domain
 
-The production domain is attached to the `workinghelper-agent` Worker:
+The production domain remains attached to the existing `workinghelper-agent` Worker:
 
 ```text
 Cloudflare Dashboard
@@ -302,7 +308,7 @@ Cloudflare Dashboard
 → workinghelper.com
 ```
 
-If `workinghelper.com` is still attached to the old Worker, remove it from the old Worker first.
+No Worker or domain migration is required for the NextRole product rebrand.
 
 ## Key Files
 
