@@ -2,7 +2,7 @@
   "name": "workinghelper",
   "version": "1.0.0",
   "private": true,
-  "description": "NextRole by AitherPath — an AI career copilot built on Cloudflare Workers",
+  "description": "AitherPath AI Assistant Agent — an AI career copilot built on Cloudflare Workers",
   "keywords": [
     "agents",
     "ai",

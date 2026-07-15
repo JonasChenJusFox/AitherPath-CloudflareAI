@@ -46,7 +46,7 @@ function getInvalidOAuthStateResponse() {
     {
       error: "Invalid Google OAuth callback state.",
       message:
-        "The Google login was started from a different browser profile, expired, or was restarted in another tab. Open NextRole and click Connect Gmail again in the same browser profile."
+        "The Google login was started from a different browser profile, expired, or was restarted in another tab. Open AitherPath AI Assistant Agent and click Connect Gmail again in the same browser profile."
     },
     { status: 400 }
   );
@@ -131,7 +131,7 @@ function getGoogleConnectedPage(homeUrl: string) {
   <body>
     <main>
       <h1>Gmail connected</h1>
-      <p>Returning to NextRole...</p>
+      <p>Returning to AitherPath AI Assistant Agent...</p>
       <a href="${safeHomeUrl}">Go back now</a>
     </main>
   </body>

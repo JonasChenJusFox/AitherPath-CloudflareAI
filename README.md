@@ -1,8 +1,8 @@
-# NextRole
+# AitherPath AI Assistant Agent
 
-**NextRole by AitherPath** is an AI career copilot built on Cloudflare. Users chat with NextRole to find current opportunities and coordinate the communication, calendar events, contacts, and preferences around their job search. The agent calls real tools backed by the Jooble and Google APIs.
+**AitherPath AI Assistant Agent** is AitherPath's AI career copilot built on Cloudflare. Users chat with the assistant to find current opportunities and coordinate the communication, calendar events, contacts, and preferences around their job search. The agent calls real tools backed by the Jooble and Google APIs.
 
-- Product: **NextRole**
+- Product: **AitherPath AI Assistant Agent**
 - Company: **AitherPath**
 - Repository: **AitherPath-CloudflareAI**
 
@@ -13,7 +13,7 @@ The Week 3 foundation adds Google Calendar, Google Contacts through People API, 
 - Agent Worker: `https://workinghelper-agent.jonas-aitherpath.workers.dev`
 - Production domain: `https://workinghelper.com`
 
-The repository, Worker name, and production domain intentionally keep their existing technical identifiers. NextRole is the user-facing product name.
+The repository, Worker name, and production domain intentionally keep their existing technical identifiers. AitherPath AI Assistant Agent is the user-facing product name.
 
 ## Tech Stack
 
@@ -176,7 +176,7 @@ Required Google Cloud setup:
 
 ```text
 Google Cloud Console
-→ Create/select project: NextRole by AitherPath
+→ Create/select project: AitherPath AI Assistant Agent
 → Enable Gmail API
 → Enable Google Calendar API
 → Enable People API
@@ -218,7 +218,7 @@ Send a test email from the command line after connecting Gmail in the browser:
 
 ```bash
 WORKINGHELPER_COOKIE='paste_the_workinghelper_cookie_header_here' \
-  npm run send:test-email -- recipient@example.com "NextRole test" "Hello from NextRole by AitherPath."
+  npm run send:test-email -- recipient@example.com "AitherPath AI Assistant Agent test" "Hello from AitherPath AI Assistant Agent."
 ```
 
 The script calls `POST /api/gmail/send`, so it uses the same Gmail OAuth flow as the web app.
@@ -308,7 +308,7 @@ Cloudflare Dashboard
 → workinghelper.com
 ```
 
-No Worker or domain migration is required for the NextRole product rebrand.
+No Worker or domain migration is required for this product rebrand.
 
 ## Key Files
 

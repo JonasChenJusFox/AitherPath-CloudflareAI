@@ -397,16 +397,9 @@ function Chat({
               onClick={onOpenSidebar}
               className="md:hidden shrink-0"
             />
-            <div className="min-w-0">
-              <h1 className="text-base sm:text-lg font-semibold text-kumo-default truncate">
-                NextRole
-              </h1>
-              <span className="hidden sm:block">
-                <Text size="xs" variant="secondary">
-                  by AitherPath
-                </Text>
-              </span>
-            </div>
+            <h1 className="text-base sm:text-lg font-semibold text-kumo-default truncate">
+              AitherPath AI Assistant Agent
+            </h1>
             <Badge variant="secondary" className="hidden sm:inline-flex">
               <ChatCircleDotsIcon size={12} weight="bold" className="mr-1" />
               AI Chat

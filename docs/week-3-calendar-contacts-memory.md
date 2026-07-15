@@ -2,7 +2,7 @@
 
 ## Scope
 
-Week 3 extends NextRole by AitherPath with directly testable backend APIs for schedule management, contact lookup, and persistent user context.
+Week 3 extends AitherPath AI Assistant Agent with directly testable backend APIs for schedule management, contact lookup, and persistent user context.
 
 Implemented capabilities:
 
