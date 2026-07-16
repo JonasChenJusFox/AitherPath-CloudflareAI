@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { timeZoneSchema as validTimeZoneSchema } from "../agent/time";
 
-const timeZoneSchema = z.string().trim().min(1).max(80).default("UTC");
+const timeZoneSchema = validTimeZoneSchema.default("UTC");
 const boundedText = (max: number) => z.string().trim().min(1).max(max);
 
 export const listTodayEventsSchema = z.object({
@@ -16,16 +17,26 @@ export const listEventsSchema = z.object({
   pageToken: z.string().trim().min(1).max(512).optional()
 });
 
-export const createEventSchema = z.object({
-  summary: boundedText(160),
-  description: z.string().trim().max(2000).optional(),
-  location: z.string().trim().max(300).optional(),
-  startDateTime: z.string().datetime({ offset: true }),
-  endDateTime: z.string().datetime({ offset: true }),
-  timeZone: timeZoneSchema,
-  attendeeEmails: z.array(z.email()).max(20).optional(),
-  sendUpdates: z.enum(["all", "externalOnly", "none"]).optional()
-});
+export const createEventSchema = z
+  .object({
+    summary: boundedText(160),
+    description: z.string().trim().max(2000).optional(),
+    location: z.string().trim().max(300).optional(),
+    startDateTime: z.string().datetime({ offset: true }),
+    endDateTime: z.string().datetime({ offset: true }),
+    timeZone: timeZoneSchema,
+    attendeeEmails: z.array(z.email()).max(20).optional(),
+    sendUpdates: z.enum(["all", "externalOnly", "none"]).optional()
+  })
+  .superRefine((input, context) => {
+    if (new Date(input.endDateTime) <= new Date(input.startDateTime)) {
+      context.addIssue({
+        code: "custom",
+        path: ["endDateTime"],
+        message: "Event end time must be after its start time."
+      });
+    }
+  });
 
 export const contactsSearchSchema = z.object({
   q: boundedText(120),

@@ -1,20 +1,11 @@
-import { createWorkersAI } from "workers-ai-provider";
 import {
   routeAgentRequest,
   type Connection,
   type ConnectionContext
 } from "agents";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
-import { searchJobs } from "./jobSearch";
 import { handleGoogleRoutes } from "./auth/googleRoutes";
 import { handleWeek3Routes } from "./routes/week3";
-import { listInboxMessages, sendGmailMessage } from "./google/gmail";
-import {
-  createCalendarEvent,
-  listCalendarEventsForDate,
-  listTodayCalendarEvents
-} from "./google/calendar";
-import { listContacts, searchContacts } from "./google/contacts";
 import {
   getGoogleOAuthConfig,
   refreshGoogleAccessToken
@@ -27,19 +18,27 @@ import {
   convertToModelMessages,
   pruneMessages,
   stepCountIs,
-  streamText,
-  tool
+  streamText
 } from "ai";
-import { z } from "zod";
 import { memoryPostSchema, preferencesPatchSchema } from "./schemas/week3";
 import { ApiError, errorJson, getRequestId, successJson } from "./utils/api";
-
-type MemoryEntry = {
-  key: string;
-  value: string;
-  createdAt: number;
-  updatedAt: number;
-};
+import {
+  createAgentModel,
+  ModelConfigurationError,
+  safeModelErrorMessage
+} from "./agent/model";
+import { buildSystemPrompt } from "./agent/systemPrompt";
+import { createToolRegistry } from "./agent/toolRegistry";
+import { selectActiveTools } from "./agent/intentRouter";
+import { MAX_TOOL_STEPS } from "./agent/orchestration";
+import {
+  PendingActionService,
+  type PendingAction,
+  type PendingActionRepository,
+  type PendingActionStatus,
+  type PendingActionToolName
+} from "./agent/pendingActions";
+import type { MemoryEntry } from "./agent/types";
 
 type MemorySaveResult =
   | {
@@ -97,6 +96,92 @@ export class ChatAgent extends AIChatAgent<Env> {
         updated_at INTEGER NOT NULL
       )
     `;
+
+    this.sql`
+      CREATE TABLE IF NOT EXISTS pending_actions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        normalized_arguments TEXT NOT NULL,
+        preview TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL
+      )
+    `;
+  }
+
+  private pendingActionRepository(): PendingActionRepository {
+    this.ensureWeek3Tables();
+
+    return {
+      insertIfAbsent: (action) => {
+        this.sql`
+          INSERT OR IGNORE INTO pending_actions (
+            id,
+            session_id,
+            tool_name,
+            normalized_arguments,
+            preview,
+            created_at,
+            expires_at,
+            status
+          ) VALUES (
+            ${action.id},
+            ${action.sessionId},
+            ${action.toolName},
+            ${action.normalizedArguments},
+            ${action.preview},
+            ${action.createdAt},
+            ${action.expiresAt},
+            ${action.status}
+          )
+        `;
+      },
+      get: (id) => {
+        const rows = this.sql<{
+          id: string;
+          session_id: string;
+          tool_name: string;
+          normalized_arguments: string;
+          preview: string;
+          created_at: number;
+          expires_at: number;
+          status: string;
+        }>`SELECT * FROM pending_actions WHERE id = ${id} LIMIT 1`;
+        const row = rows[0];
+        if (!row) return null;
+
+        return {
+          id: row.id,
+          sessionId: row.session_id,
+          toolName: row.tool_name as PendingActionToolName,
+          normalizedArguments: row.normalized_arguments,
+          preview: row.preview,
+          createdAt: row.created_at,
+          expiresAt: row.expires_at,
+          status: row.status as PendingActionStatus
+        } satisfies PendingAction;
+      },
+      cancelPendingForTool: (toolName, exceptId) => {
+        this.sql`
+          UPDATE pending_actions
+          SET status = ${"cancelled"}
+          WHERE tool_name = ${toolName}
+            AND id <> ${exceptId}
+            AND status = ${"pending"}
+        `;
+      },
+      transition: (id, from, to) => {
+        const rows = this.sql<{ id: string }>`
+          UPDATE pending_actions
+          SET status = ${to}
+          WHERE id = ${id} AND status = ${from}
+          RETURNING id
+        `;
+        return rows.length === 1;
+      }
+    };
   }
 
   private getPreferences() {
@@ -452,375 +537,69 @@ export class ChatAgent extends AIChatAgent<Env> {
   }
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
-    const workersai = createWorkersAI({ binding: this.env.AI });
-    const today = new Date().toISOString().slice(0, 10);
-    const memorySaveResult = await this.autoSaveExplicitMemory(
-      this.latestUserMessageText()
-    );
+    const latestUserText = this.latestUserMessageText();
+    let agentModel;
+
+    try {
+      agentModel = createAgentModel(this.env, this.sessionAffinity);
+    } catch (error) {
+      const message =
+        error instanceof ModelConfigurationError
+          ? error.message
+          : "The model provider is not configured correctly.";
+      return new Response(message, { status: 503 });
+    }
+
+    const preferences = this.getPreferences();
+    const memorySaveResult = await this.autoSaveExplicitMemory(latestUserText);
     const memoryContext = await this.memoryContext();
     const memorySaveInstruction =
       memorySaveResult.status === "saved"
-        ? `This request explicitly asked you to remember something, and the server already saved it (${memorySaveResult.memories.map((memory) => memory.key).join(", ")}). Briefly confirm it without claiming a separate tool call.`
+        ? `The server saved the explicitly requested memory keys: ${memorySaveResult.memories
+            .map((memory) => memory.key)
+            .join(
+              ", "
+            )}. Confirm this briefly without calling the memory tool again.`
         : memorySaveResult.status === "blocked"
           ? memorySaveResult.reason
           : "No automatic memory save happened for this request.";
 
+    const pendingActions = new PendingActionService(
+      this.pendingActionRepository(),
+      this.sessionAffinity
+    );
+    const tools = createToolRegistry({
+      env: this.env,
+      latestUserText,
+      getGoogleAccessToken: () => this.getGmailAccessToken(),
+      saveMemory: (key, value) => this.saveSharedMemoryValue(key, value),
+      pendingActions
+    });
+
     const result = streamText({
-      model: workersai("@cf/moonshotai/kimi-k2.6", {
-        sessionAffinity: this.sessionAffinity
+      model: agentModel.model,
+      providerOptions: agentModel.providerOptions,
+      system: buildSystemPrompt({
+        now: new Date(),
+        timeZone: preferences.timeZone,
+        memoryContext,
+        memorySaveInstruction
       }),
-      system: `You are AitherPath AI Assistant Agent, an AI career copilot created by AitherPath. Today's date is ${today} in UTC. Help users search for jobs, understand job results, manage Gmail-related job search communication, manage calendar events, search contacts, remember useful preferences, and decide useful next steps. When a user asks for jobs, internships, roles, positions, companies hiring, or openings, use the searchJobs tool before answering. Include the job title, company, location, and link when job results are available. If the user does not provide enough search details, ask a short follow-up question.
-
-Saved user memory:
-${memoryContext}
-
-Current memory save status:
-${memorySaveInstruction}
-
-If the user asks who they are, what you remember about them, or asks for profile details, answer from saved user memory when available. Never claim that sensitive or secret information was saved when the current memory save status says it was blocked.
-
-You can use Gmail tools only when the user has connected Gmail. When a user asks to read recent inbox messages, use listGmailInbox. When a user explicitly asks you to send an email, use sendGmailEmail only after you have a recipient email address, a subject, and the complete body. If any of those details are missing, ask a short follow-up question instead of sending.
-
-You can use Google Calendar and Contacts tools only when the user has connected Google. When a user asks about today's schedule, meetings, or classes, use listTodayCalendarEvents. When a user asks about a specific date, tomorrow, this weekend, or another relative calendar date, resolve it to a YYYY-MM-DD date and use listCalendarEventsByDate. For example, if today is 2026-07-11, tomorrow is 2026-07-12. When a user explicitly asks you to create or schedule a calendar event, use createCalendarEvent only after you have an event title, start time, end time, and time zone. If details are missing, ask a short follow-up question. When a user asks who is in their contacts list, use listGoogleContacts. When a user asks to find a person's email, phone number, or contact details, use searchGoogleContacts.
-
-When a user says to remember a stable preference, goal, profile detail, or recurring context for later, use saveSessionMemory. Do not save secrets, passwords, tokens, or sensitive identity numbers.
-
-Keep answers concise and practical. If the job API returns no useful results, suggest how the user can broaden the search.`,
-      // Prune old tool calls to save tokens on long conversations
       messages: pruneMessages({
         messages: await convertToModelMessages(this.messages),
         toolCalls: "before-last-2-messages"
       }),
-      tools: {
-        searchJobs: tool({
-          description:
-            "Search current job postings using keywords and an optional location. Use this whenever the user asks to find jobs, internships, openings, roles, or hiring companies.",
-          inputSchema: z.object({
-            keywords: z
-              .string()
-              .describe(
-                "Job search keywords, such as frontend engineer, software engineer intern, or data analyst"
-              ),
-            location: z
-              .string()
-              .optional()
-              .describe("Optional city, state, country, or remote preference")
-          }),
-          execute: async ({ keywords, location }) => {
-            const apiKey = this.env.JOOBLE_API_KEY;
-
-            if (!apiKey) {
-              return {
-                error:
-                  "Job search is not configured. Add JOOBLE_API_KEY as a Cloudflare secret."
-              };
-            }
-
-            return {
-              jobs: await searchJobs(apiKey, {
-                keywords: keywords.trim(),
-                location: location?.trim()
-              })
-            };
-          }
-        }),
-        listGmailInbox: tool({
-          description:
-            "Read recent Gmail inbox messages for the connected user. Use when the user asks to check, read, or summarize recent inbox emails.",
-          inputSchema: z.object({
-            maxResults: z
-              .number()
-              .int()
-              .min(1)
-              .max(10)
-              .optional()
-              .describe(
-                "Maximum number of inbox messages to read, from 1 to 10"
-              )
-          }),
-          execute: async ({ maxResults }) => {
-            const accessToken = await this.getGmailAccessToken();
-
-            if (!accessToken) {
-              return {
-                error:
-                  "Gmail is not connected. Ask the user to click Connect Gmail first."
-              };
-            }
-
-            return {
-              messages: await listInboxMessages(accessToken, maxResults ?? 5)
-            };
-          }
-        }),
-        sendGmailEmail: tool({
-          description:
-            "Send a plain-text email from the connected Gmail account. Use only when the user explicitly asks to send an email and provides a recipient email address, subject, and complete body.",
-          inputSchema: z.object({
-            to: z
-              .email()
-              .describe("Recipient email address, such as person@example.com"),
-            subject: z.string().min(1).describe("Email subject line"),
-            body: z.string().min(1).describe("Plain-text email body")
-          }),
-          execute: async ({ to, subject, body }) => {
-            const accessToken = await this.getGmailAccessToken();
-
-            if (!accessToken) {
-              return {
-                error:
-                  "Gmail is not connected. Ask the user to click Connect Gmail first."
-              };
-            }
-
-            const result = await sendGmailMessage(accessToken, {
-              to: to.trim(),
-              subject: subject.trim(),
-              body: body.trim()
-            });
-
-            return {
-              sent: true,
-              messageId: result.id,
-              threadId: result.threadId
-            };
-          }
-        }),
-        listTodayCalendarEvents: tool({
-          description:
-            "List today's Google Calendar events for the connected user. Use when the user asks about today's schedule, meetings, events, or classes.",
-          inputSchema: z.object({
-            timeZone: z
-              .string()
-              .describe(
-                "IANA time zone for the user's day, such as Asia/Shanghai or America/New_York"
-              ),
-            maxResults: z
-              .number()
-              .int()
-              .min(1)
-              .max(10)
-              .optional()
-              .describe("Maximum number of calendar events to return")
-          }),
-          execute: async ({ timeZone, maxResults }) => {
-            const accessToken = await this.getGmailAccessToken();
-
-            if (!accessToken) {
-              return {
-                error:
-                  "Google is not connected. Ask the user to click Connect Gmail first."
-              };
-            }
-
-            return {
-              events: await listTodayCalendarEvents(
-                accessToken,
-                timeZone.trim(),
-                maxResults ?? 10
-              )
-            };
-          }
-        }),
-        listCalendarEventsByDate: tool({
-          description:
-            "List Google Calendar events for a specific calendar date. Use when the user asks for tomorrow, a date like July 12, or any non-today schedule query.",
-          inputSchema: z.object({
-            date: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .describe("Calendar date to query in YYYY-MM-DD format"),
-            timeZone: z
-              .string()
-              .describe(
-                "IANA time zone for the requested day, such as Asia/Shanghai or America/New_York"
-              ),
-            maxResults: z
-              .number()
-              .int()
-              .min(1)
-              .max(20)
-              .optional()
-              .describe("Maximum number of calendar events to return")
-          }),
-          execute: async ({ date, timeZone, maxResults }) => {
-            const accessToken = await this.getGmailAccessToken();
-
-            if (!accessToken) {
-              return {
-                error:
-                  "Google is not connected. Ask the user to click Connect Gmail first."
-              };
-            }
-
-            return {
-              date,
-              events: await listCalendarEventsForDate(
-                accessToken,
-                date,
-                timeZone.trim(),
-                maxResults ?? 10
-              )
-            };
-          }
-        }),
-        createCalendarEvent: tool({
-          description:
-            "Create a Google Calendar event for the connected user. Use only when the user explicitly asks to schedule or create an event and provides a title, start time, end time, and time zone.",
-          inputSchema: z.object({
-            summary: z.string().min(1).describe("Calendar event title"),
-            startDateTime: z
-              .string()
-              .datetime({ offset: true })
-              .describe(
-                "Event start time in RFC3339 format with offset, such as 2026-07-11T14:00:00+08:00"
-              ),
-            endDateTime: z
-              .string()
-              .datetime({ offset: true })
-              .describe(
-                "Event end time in RFC3339 format with offset, such as 2026-07-11T14:30:00+08:00"
-              ),
-            timeZone: z
-              .string()
-              .describe("IANA time zone, such as Asia/Shanghai"),
-            description: z
-              .string()
-              .optional()
-              .describe("Optional calendar event description"),
-            location: z.string().optional().describe("Optional event location"),
-            attendeeEmails: z
-              .array(z.email())
-              .max(20)
-              .optional()
-              .describe("Optional attendee email addresses")
-          }),
-          execute: async ({
-            summary,
-            startDateTime,
-            endDateTime,
-            timeZone,
-            description,
-            location,
-            attendeeEmails
-          }) => {
-            const accessToken = await this.getGmailAccessToken();
-
-            if (!accessToken) {
-              return {
-                error:
-                  "Google is not connected. Ask the user to click Connect Gmail first."
-              };
-            }
-
-            const event = await createCalendarEvent(accessToken, {
-              summary: summary.trim(),
-              startDateTime,
-              endDateTime,
-              timeZone: timeZone.trim(),
-              description: description?.trim(),
-              location: location?.trim(),
-              attendeeEmails,
-              sendUpdates: "none"
-            });
-
-            return {
-              created: true,
-              event
-            };
-          }
-        }),
-        searchGoogleContacts: tool({
-          description:
-            "Search the connected user's Google Contacts by name, email, company, or keyword. Use when the user asks for a person's email, phone number, or contact details.",
-          inputSchema: z.object({
-            query: z
-              .string()
-              .min(1)
-              .describe("Contact keyword, name, email, company, or phone text"),
-            pageSize: z
-              .number()
-              .int()
-              .min(1)
-              .max(10)
-              .optional()
-              .describe("Maximum contacts to return")
-          }),
-          execute: async ({ query, pageSize }) => {
-            const accessToken = await this.getGmailAccessToken();
-
-            if (!accessToken) {
-              return {
-                error:
-                  "Google is not connected. Ask the user to click Connect Gmail first."
-              };
-            }
-
-            return {
-              contacts: await searchContacts(
-                accessToken,
-                query.trim(),
-                pageSize ?? 10
-              )
-            };
-          }
-        }),
-        listGoogleContacts: tool({
-          description:
-            "List the connected user's Google Contacts. Use when the user asks who is in their contacts list.",
-          inputSchema: z.object({
-            pageSize: z
-              .number()
-              .int()
-              .min(1)
-              .max(20)
-              .optional()
-              .describe("Maximum contacts to return")
-          }),
-          execute: async ({ pageSize }) => {
-            const accessToken = await this.getGmailAccessToken();
-
-            if (!accessToken) {
-              return {
-                error:
-                  "Google is not connected. Ask the user to click Connect Gmail first."
-              };
-            }
-
-            return {
-              contacts: await listContacts(accessToken, pageSize ?? 10)
-            };
-          }
-        }),
-        saveSessionMemory: tool({
-          description:
-            "Save a stable user preference, goal, or recurring context for future conversations. Do not save passwords, tokens, or sensitive identity numbers.",
-          inputSchema: z.object({
-            key: z
-              .string()
-              .regex(/^[a-zA-Z0-9:_-]{1,80}$/)
-              .describe(
-                "Short memory key, such as job_search_goal or preferred_location"
-              ),
-            value: z
-              .string()
-              .min(1)
-              .max(2000)
-              .describe("Memory value to remember for later")
-          }),
-          execute: async ({ key, value }) => {
-            return {
-              saved: true,
-              memory: await this.saveSharedMemoryValue(key, value)
-            };
-          }
-        })
-      },
-      stopWhen: stepCountIs(5),
-      abortSignal: options?.abortSignal
+      tools,
+      activeTools: selectActiveTools(latestUserText),
+      stopWhen: stepCountIs(MAX_TOOL_STEPS),
+      abortSignal: options?.abortSignal,
+      timeout: { totalMs: 60_000 }
     });
 
-    return result.toUIMessageStreamResponse();
+    return result.toUIMessageStreamResponse({
+      sendReasoning: false,
+      onError: safeModelErrorMessage
+    });
   }
 }
 

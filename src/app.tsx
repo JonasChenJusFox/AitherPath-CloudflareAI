@@ -30,8 +30,6 @@ import {
   CircleIcon,
   MoonIcon,
   SunIcon,
-  BrainIcon,
-  CaretDownIcon,
   XIcon,
   PaperclipIcon,
   ImageIcon,
@@ -160,9 +158,129 @@ function ThemeToggle() {
   );
 }
 
-function ToolPartView({ part }: { part: UIMessage["parts"][number] }) {
+function getConfirmationPreview(
+  toolName: string,
+  input: unknown
+): Array<[string, unknown]> {
+  const values = (input || {}) as Record<string, unknown>;
+  if (toolName === "sendGmailEmail") {
+    return [
+      ["Recipient", values.to],
+      ["Subject", values.subject],
+      ["Body", values.body]
+    ];
+  }
+  if (toolName === "createCalendarEvent") {
+    return [
+      ["Event", values.summary],
+      ["Start", values.startDateTime],
+      ["End", values.endDateTime],
+      ["Time zone", values.timeZone],
+      ["Location", values.location],
+      ["Attendees", (values.attendeeEmails as string[] | undefined)?.join(", ")]
+    ];
+  }
+  return Object.entries(values);
+}
+
+function ToolPartView({
+  part,
+  disabled,
+  onApproval
+}: {
+  part: UIMessage["parts"][number];
+  disabled: boolean;
+  onApproval: (id: string, approved: boolean) => void;
+}) {
   if (!isToolUIPart(part)) return null;
   const toolName = getToolName(part);
+
+  if (part.state === "approval-requested") {
+    return (
+      <div className="flex justify-start">
+        <Surface className="max-w-[92%] px-4 py-3 rounded-xl ring ring-kumo-line">
+          <div className="flex items-center gap-2 mb-3">
+            <GearIcon size={14} className="text-kumo-brand" />
+            <Text size="sm" bold>
+              Confirm{" "}
+              {toolName === "sendGmailEmail" ? "email" : "calendar event"}
+            </Text>
+            <Badge variant="secondary">Approval required</Badge>
+          </div>
+          <dl className="space-y-2 text-sm">
+            {getConfirmationPreview(toolName, part.input)
+              .filter(([, value]) => value !== undefined && value !== "")
+              .map(([label, value]) => (
+                <div key={label} className="grid grid-cols-[5.5rem_1fr] gap-2">
+                  <dt className="text-kumo-inactive">{label}</dt>
+                  <dd className="text-kumo-default whitespace-pre-wrap break-words">
+                    {String(value)}
+                  </dd>
+                </div>
+              ))}
+          </dl>
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onApproval(part.approval.id, true)}
+              className="rounded-lg bg-kumo-brand px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              aria-label={`Confirm ${toolName}`}
+            >
+              Confirm action
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => onApproval(part.approval.id, false)}
+              className="rounded-lg border border-kumo-line px-3 py-2 text-sm font-medium text-kumo-default disabled:opacity-50"
+              aria-label={`Cancel ${toolName}`}
+            >
+              Cancel
+            </button>
+          </div>
+        </Surface>
+      </div>
+    );
+  }
+
+  if (part.state === "approval-responded") {
+    return (
+      <div className="flex justify-start">
+        <Surface className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
+          <Text size="sm" variant="secondary">
+            {part.approval.approved
+              ? "Action approved. Executing once…"
+              : "Action cancelled. No external change was made."}
+          </Text>
+        </Surface>
+      </div>
+    );
+  }
+
+  if (part.state === "output-denied") {
+    return (
+      <div className="flex justify-start">
+        <Surface className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
+          <Text size="sm" variant="secondary">
+            Action cancelled. No external change was made.
+          </Text>
+        </Surface>
+      </div>
+    );
+  }
+
+  if (part.state === "output-error") {
+    return (
+      <div className="flex justify-start">
+        <Surface className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
+          <Text size="sm" variant="secondary">
+            {part.errorText || "The tool could not complete this request."}
+          </Text>
+        </Surface>
+      </div>
+    );
+  }
 
   // Show the raw tool result while Week 1 is still focused on understanding the data flow.
   if (part.state === "output-available") {
@@ -234,10 +352,15 @@ function Chat({
     )
   });
 
-  const { messages, sendMessage, clearHistory, stop, status } = useAgentChat({
-    agent,
-    experimental_throttle: 100
-  });
+  const {
+    messages,
+    sendMessage,
+    clearHistory,
+    stop,
+    status,
+    error,
+    addToolApprovalResponse
+  } = useAgentChat({ agent, experimental_throttle: 100 });
 
   const isStreaming = status === "streaming" || status === "submitted";
 
@@ -267,6 +390,15 @@ function Chat({
       onMessageSent(text);
     },
     [isStreaming, onMessageSent, sendMessage, syncAgentAuth]
+  );
+
+  const respondToApproval = useCallback(
+    async (id: string, approved: boolean) => {
+      if (isStreaming) return;
+      await syncAgentAuth();
+      addToolApprovalResponse({ id, approved });
+    },
+    [addToolApprovalResponse, isStreaming, syncAgentAuth]
   );
 
   useEffect(() => {
@@ -475,52 +607,13 @@ function Chat({
             return (
               <div key={message.id} className="space-y-2">
                 {message.parts.filter(isToolUIPart).map((part) => (
-                  <ToolPartView key={part.toolCallId} part={part} />
+                  <ToolPartView
+                    key={part.toolCallId}
+                    part={part}
+                    disabled={isStreaming}
+                    onApproval={respondToApproval}
+                  />
                 ))}
-
-                {/* Reasoning parts */}
-                {message.parts
-                  .filter(
-                    (part) =>
-                      part.type === "reasoning" &&
-                      (part as { text?: string }).text?.trim()
-                  )
-                  .map((part, i) => {
-                    const reasoning = part as {
-                      type: "reasoning";
-                      text: string;
-                      state?: "streaming" | "done";
-                    };
-                    const isDone = reasoning.state === "done" || !isStreaming;
-                    return (
-                      <div key={i} className="flex justify-start">
-                        <details className="max-w-[85%] w-full" open={!isDone}>
-                          <summary className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-sm select-none">
-                            <BrainIcon size={14} className="text-purple-400" />
-                            <span className="font-medium text-kumo-default">
-                              Reasoning
-                            </span>
-                            {isDone ? (
-                              <span className="text-xs text-kumo-success">
-                                Complete
-                              </span>
-                            ) : (
-                              <span className="text-xs text-kumo-brand">
-                                Thinking...
-                              </span>
-                            )}
-                            <CaretDownIcon
-                              size={14}
-                              className="ml-auto text-kumo-inactive"
-                            />
-                          </summary>
-                          <pre className="mt-2 px-3 py-2 rounded-lg bg-kumo-control text-xs text-kumo-default whitespace-pre-wrap overflow-auto max-h-64">
-                            {reasoning.text}
-                          </pre>
-                        </details>
-                      </div>
-                    );
-                  })}
 
                 {/* Image parts */}
                 {message.parts
@@ -593,6 +686,15 @@ function Chat({
           }}
           className="max-w-3xl mx-auto px-3 sm:px-5 py-4"
         >
+          {error && (
+            <div
+              role="alert"
+              className="mb-3 rounded-lg border border-kumo-danger/30 bg-kumo-danger/10 px-3 py-2 text-sm text-kumo-default"
+            >
+              {error.message ||
+                "The assistant could not complete this request. Please try again."}
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"

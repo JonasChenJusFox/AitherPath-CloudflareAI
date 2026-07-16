@@ -4,6 +4,10 @@
   "main": "src/server.ts",
   "compatibility_date": "2026-03-02",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "LLM_PROVIDER": "openai",
+    "OPENAI_MODEL": "gpt-5.4-mini"
+  },
   "ai": {
     "binding": "AI",
     "remote": true

@@ -38,7 +38,11 @@ export async function searchJobs(
   });
 
   if (!response.ok) {
-    throw new Error(`Jooble request failed with status ${response.status}`);
+    throw new ApiError(
+      "JOB_SEARCH_ERROR",
+      "Unable to communicate with the job search provider.",
+      response.status
+    );
   }
 
   const data = await response.json<JoobleResponse>();
@@ -52,3 +56,4 @@ export async function searchJobs(
     link: job.link || ""
   }));
 }
+import { ApiError } from "./utils/api";

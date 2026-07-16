@@ -6,7 +6,7 @@
 - Company: **AitherPath**
 - Repository: **AitherPath-CloudflareAI**
 
-The Week 3 foundation adds Google Calendar, Google Contacts through People API, and persistent per-user preferences/session memory on top of the completed job search and Gmail features.
+Week 4 adds OpenAI as the primary model provider, a typed modular tool registry, bounded multi-step tool execution, and server-enforced approval for email and calendar writes. The existing Workers AI provider remains available as an explicit fallback.
 
 ## Deployment URLs
 
@@ -21,6 +21,8 @@ The repository, Worker name, and production domain intentionally keep their exis
 - Cloudflare Workers
 - Cloudflare Agents SDK
 - Cloudflare Workers AI
+- OpenAI API
+- Vercel AI SDK OpenAI provider
 - Durable Objects
 - React
 - Vite
@@ -40,11 +42,13 @@ The main flow is:
 User
 → React chat UI
 → Cloudflare ChatAgent
-→ Workers AI model
-→ searchJobs tool
-→ Jooble API
-→ job results
-→ AI summary back to user
+→ OpenAI model (or configured Workers AI fallback)
+→ typed tool selection
+→ Zod input validation
+→ approval gate for external writes
+→ Jooble or Google API
+→ structured tool result
+→ final streamed response
 ```
 
 Chat memory is separated by local user and chat session:
@@ -71,6 +75,7 @@ The model can decide to call `searchJobs`, receive job results from Jooble, and 
 ```text
 .
 ├── src/
+│   ├── agent/         # Model provider, prompt, intent routing, tools, confirmation
 │   ├── auth/          # Google OAuth redirect, callback, token exchange
 │   ├── google/        # Gmail, Calendar, and People API helpers
 │   ├── routes/        # Direct HTTP API routes
@@ -78,7 +83,7 @@ The model can decide to call `searchJobs`, receive job results from Jooble, and 
 │   ├── storage/       # Temporary cookie session helpers for Week 2
 │   ├── types/         # Shared TypeScript types
 │   ├── utils/         # Shared API response and error helpers
-│   ├── server.ts      # ChatAgent, Worker routes, tools
+│   ├── server.ts      # ChatAgent composition, storage, and Worker routes
 │   ├── jobSearch.ts   # Jooble API integration
 │   ├── app.tsx        # React chat UI and chat review sidebar
 │   ├── client.tsx     # React entry point
@@ -124,13 +129,41 @@ Run tests only:
 npm run test
 ```
 
+## Model Provider Configuration
+
+OpenAI is the default Week 4 provider. `OPENAI_API_KEY` is read only by the Worker and must never be exposed to React, placed in `wrangler.jsonc`, or committed.
+
+Local `.dev.vars` configuration:
+
+```text
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5.4-mini
+LLM_PROVIDER=openai
+```
+
+Production secret:
+
+```bash
+npx wrangler secret put OPENAI_API_KEY
+```
+
+`OPENAI_MODEL` and `LLM_PROVIDER` are non-secret variables configured in `wrangler.jsonc`. Supported provider values are:
+
+- `openai`: requires `OPENAI_API_KEY`; no silent fallback occurs after OpenAI authentication, billing, rate-limit, or provider failures.
+- `workers-ai`: uses the existing Cloudflare `AI` binding and `@cf/moonshotai/kimi-k2.6`.
+
+Both providers use the same system prompt, active-tool routing, typed registry, validation, step limit, and approval mechanism.
+
 ## Environment and Secrets
 
 The job search tool needs a Jooble API key. Google OAuth, Gmail, Calendar, and Contacts need a Google Cloud OAuth client.
 
-For local development, create `.dev.vars`:
+For local development, copy `.dev.vars.example` to the ignored `.dev.vars` file and fill in local values:
 
 ```text
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5.4-mini
+LLM_PROVIDER=openai
 JOOBLE_API_KEY=your_jooble_api_key
 GOOGLE_CLIENT_ID=your_google_oauth_client_id
 GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
@@ -140,6 +173,7 @@ GOOGLE_REDIRECT_URI=http://localhost:5173/auth/google/callback
 For Cloudflare production, set these secrets:
 
 ```bash
+npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret put JOOBLE_API_KEY
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
@@ -223,6 +257,47 @@ WORKINGHELPER_COOKIE='paste_the_workinghelper_cookie_header_here' \
 
 The script calls `POST /api/gmail/send`, so it uses the same Gmail OAuth flow as the web app.
 
+## Week 4 Agent Tools
+
+The LLM can call only tools registered in `src/agent/toolRegistry.ts`. Each tool has a bounded Zod schema, input normalization, a focused description, and a structured success or safe error result.
+
+Read-only tools:
+
+- `searchJobs`
+- `listGmailInbox`
+- `listTodayCalendarEvents`
+- `listCalendarEventsByDate`
+- `listGoogleContacts`
+- `searchGoogleContacts`
+
+State-changing tools:
+
+- `sendGmailEmail` — always requires approval
+- `createCalendarEvent` — always requires approval
+- `saveSessionMemory` — requires an explicit request to remember, but not a second approval
+
+Calendar and Contacts are available through both the existing direct HTTP APIs and LLM-driven Agent tools.
+
+### Confirmation Flow
+
+Email sending and calendar creation use AI SDK tool approval plus a Durable Object confirmation record:
+
+```text
+Model proposes a complete write action
+→ server validates and normalizes arguments
+→ pending action is stored for the current ChatAgent session
+→ UI shows recipient/event, dates, time zone, and other relevant fields
+→ user chooses Confirm action or Cancel
+→ approved tool call must match the stored tool name and exact arguments
+→ action executes at most once
+→ provider result returns to the model
+→ model streams the final user-facing result
+```
+
+Pending confirmations expire after 10 minutes. A changed action cancels the older preview, records are isolated by chat session, and completed or retried approvals cannot execute the write twice. Read-only tools execute without confirmation.
+
+Relative calendar dates are resolved using the saved user time zone. Calendar writes require RFC3339 timestamps with offsets, a valid IANA time zone, and an end time after the start time.
+
 ## Week 3 APIs
 
 Week 3 endpoints are directly callable and require a connected Google session:
@@ -288,7 +363,9 @@ npm run deploy
 The deployed Worker uses:
 
 - `ChatAgent` Durable Object for agent state
-- `AI` binding for Workers AI
+- OpenAI API as the default LLM provider
+- `AI` binding for the optional Workers AI fallback
+- `OPENAI_API_KEY` secret for OpenAI
 - `JOOBLE_API_KEY` secret for Jooble
 - Google OAuth secrets for Gmail API
 - Google OAuth scopes for Calendar and People API
@@ -314,15 +391,23 @@ No Worker or domain migration is required for this product rebrand.
 
 ### `src/server.ts`
 
-Defines `ChatAgent`, the system prompt, Workers AI model call, and available tools.
+Composes `ChatAgent`, Durable Object storage, pending approvals, auth synchronization, and Worker routes.
+
+### `src/agent/`
+
+Contains the OpenAI/Workers AI provider factory, system-prompt builder, intent-based active-tool selection, typed registry, tool modules, safe errors, time-zone helpers, and confirmation state machine.
 
 Available agent tools:
 
 - `searchJobs`: searches current job postings
 - `listGmailInbox`: reads recent Gmail inbox messages
 - `sendGmailEmail`: sends a plain-text Gmail message after the user provides a recipient, subject, and body
-
-Week 3 Calendar and Contacts are implemented as direct HTTP APIs first. LLM-driven Calendar/Contacts tool orchestration is intentionally left for later phases.
+- `listTodayCalendarEvents`: reads today's Calendar events in the user's time zone
+- `listCalendarEventsByDate`: reads Calendar events for a resolved date
+- `createCalendarEvent`: creates an approved Calendar event
+- `searchGoogleContacts`: searches a connected Google Contacts account
+- `listGoogleContacts`: lists Google Contacts
+- `saveSessionMemory`: saves an explicitly requested stable preference or goal
 
 ### `src/jobSearch.ts`
 
@@ -348,3 +433,29 @@ Defines the Google OAuth routes, callback token exchange, Gmail inbox route, and
 ### `src/google/gmail.ts`
 
 Calls Gmail REST APIs with `Authorization: Bearer <access_token>`.
+
+## Verification
+
+Run the same checks used by CI:
+
+```bash
+npm run format
+npm run lint
+npm run typecheck
+npm run test
+npm run test:coverage
+npm run build
+npm run check
+```
+
+`npm run build` temporarily moves `.dev.vars` outside the project while Vite builds, then restores it. This prevents local secrets from being copied into `dist`.
+
+## Security Notes and Current Limitations
+
+- OpenAI and Google credentials remain server-side. Tool results never contain API keys, OAuth tokens, cookies, or raw provider error bodies.
+- OpenAI Responses storage is disabled by provider options.
+- Reasoning output is not sent to the browser.
+- Agent email/calendar writes require approval. The existing direct HTTP write APIs remain available for authenticated trusted clients and do not use the chat approval UI.
+- OAuth tokens are still stored in secure HttpOnly cookies for this demo. A production hardening phase should move refresh tokens to encrypted server-side storage.
+- The pending-action table provides short-lived confirmation and duplicate prevention; it is not a Week 5 Cloudflare Workflow.
+- The UI supports image attachments, but tool inputs and provider support determine how an image is used.

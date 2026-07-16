@@ -14,7 +14,7 @@
   "scripts": {
     "dev": "vite dev",
     "start": "vite dev",
-    "build": "vite build",
+    "build": "node scripts/build-safe.mjs",
     "deploy": "node scripts/deploy-safe.mjs",
     "types": "wrangler types env.d.ts --include-runtime false",
     "format": "oxfmt --write .",
@@ -26,6 +26,7 @@
     "send:test-email": "node scripts/send-test-email.mjs"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.85",
     "@cloudflare/ai-chat": "^0.9.1",
     "@cloudflare/kumo": "^2.6.0",
     "@phosphor-icons/react": "^2.1.10",
@@ -48,6 +49,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "@vitest/coverage-v8": "^4.1.10",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
     "tailwindcss": "^4.3.1",

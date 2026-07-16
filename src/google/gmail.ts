@@ -3,6 +3,7 @@ import type {
   GmailProfile,
   SendEmailInput
 } from "../types/google";
+import { ApiError } from "../utils/api";
 
 type GmailListResponse = {
   messages?: Array<{
@@ -44,8 +45,18 @@ async function gmailFetch<T>(
   });
 
   if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Gmail API request failed: ${details}`);
+    if (response.status === 401) {
+      throw new ApiError(
+        "REAUTHORIZATION_REQUIRED",
+        "Google authorization expired. Please connect Google again.",
+        401
+      );
+    }
+    throw new ApiError(
+      "GMAIL_API_ERROR",
+      "Unable to communicate with Gmail.",
+      response.status
+    );
   }
 
   return response.json<T>();

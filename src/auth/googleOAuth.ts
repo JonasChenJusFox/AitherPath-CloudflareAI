@@ -75,8 +75,7 @@ export async function exchangeCodeForTokens(
   });
 
   if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Google token exchange failed: ${details}`);
+    throw new Error("Google token exchange failed.");
   }
 
   return response.json<GoogleTokenResponse>();
@@ -102,8 +101,7 @@ export async function refreshGoogleAccessToken(
   });
 
   if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`Google token refresh failed: ${details}`);
+    throw new Error("Google token refresh failed.");
   }
 
   return response.json<GoogleTokenResponse>();
