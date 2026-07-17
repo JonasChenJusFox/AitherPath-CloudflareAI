@@ -16,10 +16,12 @@ import {
 } from "./storage/cookieSession";
 import {
   convertToModelMessages,
+  generateObject,
   pruneMessages,
   stepCountIs,
   streamText
 } from "ai";
+import { z } from "zod";
 import { memoryPostSchema, preferencesPatchSchema } from "./schemas/week3";
 import { ApiError, errorJson, getRequestId, successJson } from "./utils/api";
 import {
@@ -53,6 +55,22 @@ type MemorySaveResult =
       status: "saved";
       memories: MemoryEntry[];
     };
+
+const profileMemoryExtractionSchema = z.object({
+  memories: z
+    .array(
+      z.object({
+        key: z
+          .string()
+          .trim()
+          .regex(/^profile:[a-zA-Z0-9:_-]{1,70}$/),
+        value: z.string().trim().min(1).max(500)
+      })
+    )
+    .max(8)
+});
+
+type ProfileMemoryExtraction = z.infer<typeof profileMemoryExtractionSchema>;
 
 function preferredTimeZoneFromMemory(memories: MemoryEntry[]) {
   for (const memory of memories) {
@@ -449,6 +467,65 @@ export class ChatAgent extends AIChatAgent<Env> {
     return { status: "saved", memories: saved };
   }
 
+  private async autoExtractProfileMemory(
+    model: ReturnType<typeof createAgentModel>,
+    text: string
+  ): Promise<MemoryEntry[]> {
+    const cleanText = text.trim();
+    if (!cleanText) return [];
+
+    try {
+      const result = await generateObject({
+        model: model.model,
+        providerOptions: model.providerOptions,
+        schema: profileMemoryExtractionSchema,
+        schemaName: "user_profile_memory",
+        schemaDescription:
+          "Explicit, durable user profile facts extracted from the latest message.",
+        system: `You extract durable personal profile facts from a user's latest message.
+Return only facts the user explicitly stated, not guesses or temporary task details.
+Save useful facts such as name, email, location, IANA time zone, job-role preferences, work preferences, and recurring goals.
+Use these key formats: profile:name, profile:email, profile:location, profile:timezone, profile:preference:<short_name>, profile:goal:<short_name>.
+Normalize an explicitly stated time zone to an IANA identifier when possible. Do not save passwords, API keys, tokens, financial data, government IDs, health data, or other secrets.
+If there is no durable profile fact, return an empty memories array.`,
+        prompt: cleanText,
+        abortSignal: undefined
+      });
+
+      const extracted = result.object as ProfileMemoryExtraction;
+      const saved: MemoryEntry[] = [];
+      for (const candidate of extracted.memories) {
+        if (
+          /password|secret|token|api.?key|access.?token|refresh.?token|oauth|social.?security|passport|credit.?card/i.test(
+            `${candidate.key} ${candidate.value}`
+          )
+        ) {
+          continue;
+        }
+
+        if (candidate.key === "profile:timezone") {
+          const normalizedTimeZone = extractTimeZone(candidate.value);
+          if (!normalizedTimeZone) continue;
+          saved.push(
+            await this.saveSharedMemoryValue(
+              "profile:timezone",
+              normalizedTimeZone
+            )
+          );
+          continue;
+        }
+
+        saved.push(
+          await this.saveSharedMemoryValue(candidate.key, candidate.value)
+        );
+      }
+      return saved;
+    } catch {
+      // Memory extraction must never prevent the main chat response.
+      return [];
+    }
+  }
+
   override async fetch(request: Request) {
     const url = new URL(request.url);
     const requestId = getRequestId(request);
@@ -566,6 +643,10 @@ export class ChatAgent extends AIChatAgent<Env> {
     }
 
     const memorySaveResult = await this.autoSaveExplicitMemory(latestUserText);
+    const automaticallyExtractedMemories = await this.autoExtractProfileMemory(
+      agentModel,
+      latestUserText
+    );
     const explicitTimeZone = /\b(?:time\s*zone|timezone|tz|preferred)\b/i.test(
       latestUserText
     )
@@ -586,7 +667,13 @@ export class ChatAgent extends AIChatAgent<Env> {
             )}. Confirm this briefly without calling the memory tool again.`
         : memorySaveResult.status === "blocked"
           ? memorySaveResult.reason
-          : "No automatic memory save happened for this request.";
+          : automaticallyExtractedMemories.length > 0
+            ? `The server automatically saved these explicit profile facts: ${automaticallyExtractedMemories
+                .map((memory) => memory.key)
+                .join(
+                  ", "
+                )}. Mention this naturally only if relevant; do not call the memory tool again.`
+            : "No profile memory was extracted for this request.";
 
     const pendingActions = new PendingActionService(
       this.pendingActionRepository(),

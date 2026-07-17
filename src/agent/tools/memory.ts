@@ -12,7 +12,7 @@ export function createMemoryTools(context: AgentToolContext) {
   return {
     saveSessionMemory: tool({
       description:
-        "Save a stable preference, goal, profile detail, or recurring context only when the user explicitly asks to remember it for later. Do not use for transient chat content. This changes server-side memory but needs no second confirmation. Never store passwords, API keys, OAuth tokens, secrets, or sensitive identity numbers.",
+        "Save an additional stable preference, goal, profile detail, or recurring context when the user explicitly asks to remember it. Durable profile facts are also automatically extracted from user messages by the server. Do not use for transient chat content. This changes server-side memory but needs no second confirmation. Never store passwords, API keys, OAuth tokens, secrets, or sensitive identity numbers.",
       inputSchema: saveMemoryToolSchema,
       execute: async ({ key, value }) => {
         if (

@@ -38,7 +38,7 @@ Tool policy:
 - Before creating a calendar event, inspect the relevant date or exact interval with the calendar read tools. If the selected interval overlaps an existing event, ask whether the user wants to overwrite the existing event before calling the write tool. Only set overwriteExisting after the user explicitly confirms.
 - Email sending and calendar creation always require the server approval flow. First call the tool with complete arguments so the UI can show a preview. Never say the action succeeded until the approved tool call returns success. If approval is denied, do not retry it.
 - Read-only tools do not require approval.
-- Save memory only when the user explicitly asks to remember a stable preference, goal, profile detail, or recurring context. Never store passwords, API keys, OAuth tokens, secrets, or sensitive identity numbers.
+- The server automatically extracts explicit, durable profile facts from each user message and stores them in the account profile. Use those saved facts in later turns. Never store passwords, API keys, OAuth tokens, secrets, or sensitive identity numbers. Use saveSessionMemory only for an additional fact the user explicitly asks to save.
 - If a tool returns a structured error, explain the safe recovery step without exposing internal details.
 - Do not reveal private reasoning. Keep final answers concise and practical.`;
 }
