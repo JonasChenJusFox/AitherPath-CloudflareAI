@@ -337,6 +337,7 @@ function Chat({
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const dragDepthRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -412,6 +413,32 @@ function Chat({
     }
   }, [isStreaming]);
 
+  // A drag that is cancelled outside the chat surface does not always emit a
+  // dragleave event on the React root. Clear the drop target on browser-level
+  // cancellation so an abandoned drag can never trap the chat UI.
+  useEffect(() => {
+    const cancelDrag = () => {
+      dragDepthRef.current = 0;
+      setIsDragging(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelDrag();
+    };
+
+    window.addEventListener("dragend", cancelDrag);
+    window.addEventListener("drop", cancelDrag);
+    window.addEventListener("blur", cancelDrag);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("dragend", cancelDrag);
+      window.removeEventListener("drop", cancelDrag);
+      window.removeEventListener("blur", cancelDrag);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const addFiles = useCallback((files: FileList | File[]) => {
     const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (images.length === 0) return;
@@ -426,6 +453,15 @@ function Chat({
     });
   }, []);
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes("Files")) {
+      dragDepthRef.current += 1;
+      setIsDragging(true);
+    }
+  }, []);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -435,13 +471,15 @@ function Chat({
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.currentTarget === e.target) setIsDragging(false);
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
   }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      dragDepthRef.current = 0;
       setIsDragging(false);
       if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
     },
@@ -502,17 +540,28 @@ function Chat({
   return (
     <div
       className="flex flex-col h-screen bg-kumo-elevated relative min-w-0 flex-1"
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-kumo-elevated/80 backdrop-blur-sm border-2 border-dashed border-kumo-brand rounded-xl m-2 pointer-events-none">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-kumo-elevated/80 backdrop-blur-sm border-2 border-dashed border-kumo-brand rounded-xl m-2">
           <div className="flex flex-col items-center gap-2 text-kumo-brand">
             <ImageIcon size={40} />
             <Text variant="heading3" as="span">
               Drop images here
             </Text>
+            <button
+              type="button"
+              className="mt-2 rounded-md border border-kumo-line bg-kumo-base px-3 py-1.5 text-sm text-kumo-default hover:bg-kumo-hover"
+              onClick={() => {
+                dragDepthRef.current = 0;
+                setIsDragging(false);
+              }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
