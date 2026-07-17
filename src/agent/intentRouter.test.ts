@@ -18,6 +18,8 @@ describe("intent tool routing", () => {
     const tools = selectActiveTools("What meetings do I have tomorrow?");
     expect(tools).toContain("listCalendarEventsByDate");
     expect(tools).toContain("listTodayCalendarEvents");
+    expect(tools).toContain("checkCalendarAvailability");
+    expect(tools).toContain("searchGoogleContacts");
   });
 
   it("selects contact search for a contact request", () => {

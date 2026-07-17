@@ -16,6 +16,17 @@ export const timeZoneSchema = z
   .max(80)
   .refine(isValidTimeZone, "Invalid IANA time zone.");
 
+/**
+ * Extract an explicitly stated IANA time zone from a memory value or user
+ * message. Natural-language locations such as "New York" are intentionally
+ * not inferred because they can be ambiguous.
+ */
+export function extractTimeZone(text: string) {
+  const match = text.match(/\b([A-Za-z]+\/[A-Za-z_+-]+)\b/);
+  const candidate = match?.[1];
+  return candidate && isValidTimeZone(candidate) ? candidate : null;
+}
+
 export function getDateInTimeZone(now: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,

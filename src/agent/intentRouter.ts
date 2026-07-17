@@ -4,6 +4,7 @@ export const AGENT_TOOL_NAMES = [
   "sendGmailEmail",
   "listTodayCalendarEvents",
   "listCalendarEventsByDate",
+  "checkCalendarAvailability",
   "createCalendarEvent",
   "searchGoogleContacts",
   "listGoogleContacts",
@@ -24,11 +25,18 @@ export function selectActiveTools(message: string): AgentToolName[] {
   if (/\b(inbox|email|emails|gmail|mail)\b/.test(text)) {
     selected.add("listGmailInbox");
     selected.add("sendGmailEmail");
+    selected.add("searchGoogleContacts");
   }
-  if (/\b(today|tomorrow|schedule|calendar|meeting|event|class)\b/.test(text)) {
+  if (
+    /\b(today|tomorrow|schedule|calendar|meeting|event|class|appointment|book|arrange)\b/.test(
+      text
+    )
+  ) {
     selected.add("listTodayCalendarEvents");
     selected.add("listCalendarEventsByDate");
+    selected.add("checkCalendarAvailability");
     selected.add("createCalendarEvent");
+    selected.add("searchGoogleContacts");
   }
   if (/\b(contact|contacts|phone|email address|who is)\b/.test(text)) {
     selected.add("searchGoogleContacts");

@@ -2,6 +2,8 @@ import { tool } from "ai";
 import { z } from "zod";
 import {
   createCalendarEvent,
+  deleteCalendarEvent,
+  listCalendarEvents,
   listCalendarEventsForDate,
   listTodayCalendarEvents
 } from "../../google/calendar";
@@ -29,6 +31,23 @@ export const listCalendarByDateToolSchema = z
   })
   .strict();
 
+export const checkCalendarAvailabilityToolSchema = z
+  .object({
+    startDateTime: z.string().datetime({ offset: true }),
+    endDateTime: z.string().datetime({ offset: true }),
+    timeZone: timeZoneSchema
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (new Date(input.endDateTime) <= new Date(input.startDateTime)) {
+      context.addIssue({
+        code: "custom",
+        path: ["endDateTime"],
+        message: "Availability end time must be after its start time."
+      });
+    }
+  });
+
 export const createCalendarEventToolSchema = z
   .object({
     summary: z.string().trim().min(1).max(160),
@@ -37,7 +56,8 @@ export const createCalendarEventToolSchema = z
     timeZone: timeZoneSchema,
     description: z.string().trim().max(2000).optional(),
     location: z.string().trim().max(300).optional(),
-    attendeeEmails: z.array(z.email().trim().max(254)).max(20).optional()
+    attendeeEmails: z.array(z.email().trim().max(254)).max(20).optional(),
+    overwriteExisting: z.boolean().optional().default(false)
   })
   .strict()
   .superRefine((input, context) => {
@@ -60,6 +80,35 @@ async function requireGoogleToken(context: AgentToolContext) {
     );
   }
   return token;
+}
+
+async function findConflictingEvents(
+  accessToken: string,
+  input: {
+    startDateTime: string;
+    endDateTime: string;
+    timeZone: string;
+  }
+) {
+  const start = new Date(input.startDateTime).getTime();
+  const end = new Date(input.endDateTime).getTime();
+  const result = await listCalendarEvents(accessToken, {
+    timeMin: new Date(start).toISOString(),
+    timeMax: new Date(end).toISOString(),
+    timeZone: input.timeZone,
+    maxResults: 50
+  });
+
+  return result.events.filter((event) => {
+    const eventStart = new Date(event.start).getTime();
+    const eventEnd = new Date(event.end).getTime();
+    return (
+      Number.isFinite(eventStart) &&
+      Number.isFinite(eventEnd) &&
+      eventStart < end &&
+      eventEnd > start
+    );
+  });
 }
 
 export function createCalendarTools(context: AgentToolContext) {
@@ -102,9 +151,29 @@ export function createCalendarTools(context: AgentToolContext) {
         )
     }),
 
+    checkCalendarAvailability: tool({
+      description:
+        "Check whether a proposed calendar interval is free. Always call this before proposing or creating an event at a specific time. Return any overlapping events. If the interval is busy, ask the user whether to overwrite the existing event before calling createCalendarEvent.",
+      inputSchema: checkCalendarAvailabilityToolSchema,
+      execute: async (input) =>
+        safeToolExecution(async () => {
+          const conflicts = await findConflictingEvents(
+            await requireGoogleToken(context),
+            input
+          );
+          return {
+            available: conflicts.length === 0,
+            conflicts,
+            startDateTime: input.startDateTime,
+            endDateTime: input.endDateTime,
+            timeZone: input.timeZone
+          };
+        }, "Google Calendar availability could not be checked. Please reconnect Google or try again.")
+    }),
+
     createCalendarEvent: tool({
       description:
-        "Create one Google Calendar event only after title, RFC3339 start and end timestamps with offsets, and an IANA time zone are known. End must be after start. This changes external state and always requires the approval preview shown by the UI. Include the resolved date, time, time zone, attendees, and location in the preview. Never claim success unless Google returns the created event.",
+        "Create one Google Calendar event only after title, RFC3339 start and end timestamps with offsets, and an IANA time zone are known. Check availability first. If the chosen interval overlaps an existing event, ask the user whether to overwrite it; set overwriteExisting only after an explicit yes. This changes external state and always requires the approval preview shown by the UI. Never claim success unless Google returns the created event.",
       inputSchema: createCalendarEventToolSchema,
       needsApproval: true,
       metadata: { sideEffect: true, confirmation: "required" },
@@ -120,27 +189,46 @@ export function createCalendarTools(context: AgentToolContext) {
             endDateTime: input.endDateTime,
             timeZone: input.timeZone,
             location: input.location || null,
-            attendeeEmails: input.attendeeEmails || []
+            attendeeEmails: input.attendeeEmails || [],
+            overwriteExisting: input.overwriteExisting
           }
         );
       },
       execute: async (input, { toolCallId }) =>
-        safeToolExecution(
-          () =>
-            context.pendingActions.executeOnce(
-              toolCallId,
-              "createCalendarEvent",
-              input,
-              async () => ({
+        safeToolExecution(async () => {
+          const accessToken = await requireGoogleToken(context);
+          const conflicts = await findConflictingEvents(accessToken, input);
+          if (conflicts.length > 0 && !input.overwriteExisting) {
+            throw new ApiError(
+              "VALIDATION_ERROR",
+              "The selected time overlaps existing calendar events. Ask the user whether to overwrite them before trying again.",
+              400
+            );
+          }
+
+          return context.pendingActions.executeOnce(
+            toolCallId,
+            "createCalendarEvent",
+            input,
+            async () => {
+              const deleted = input.overwriteExisting
+                ? await Promise.all(
+                    conflicts.map((event) =>
+                      deleteCalendarEvent(accessToken, event.id)
+                    )
+                  )
+                : [];
+              return {
                 created: true,
-                event: await createCalendarEvent(
-                  await requireGoogleToken(context),
-                  { ...input, sendUpdates: "none" }
-                )
-              })
-            ),
-          "Google Calendar did not create the event. It is safe to review the action and try again."
-        )
+                overwrittenEvents: deleted,
+                event: await createCalendarEvent(accessToken, {
+                  ...input,
+                  sendUpdates: "none"
+                })
+              };
+            }
+          );
+        }, "Google Calendar did not create the event. It is safe to review the action and try again.")
     })
   };
 }

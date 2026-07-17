@@ -105,6 +105,7 @@ async function calendarFetch<T>(
     );
   }
 
+  if (response.status === 204) return undefined as T;
   return response.json<T>();
 }
 
@@ -372,4 +373,23 @@ export async function createCalendarEvent(
   );
 
   return normalizeEvent(event);
+}
+
+export async function deleteCalendarEvent(
+  accessToken: string,
+  eventId: string
+) {
+  if (!eventId.trim()) {
+    throw new ApiError(
+      "VALIDATION_ERROR",
+      "Calendar event ID is required.",
+      400
+    );
+  }
+
+  const url = new URL(`${CALENDAR_EVENTS_URL}/${encodeURIComponent(eventId)}`);
+  await calendarFetch<unknown>(accessToken, url.toString(), {
+    method: "DELETE"
+  });
+  return { deleted: true, eventId };
 }

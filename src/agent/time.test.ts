@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   getDateInTimeZone,
   getRelativeDateInTimeZone,
-  isValidTimeZone
+  isValidTimeZone,
+  extractTimeZone
 } from "./time";
 
 describe("time-zone date handling", () => {
@@ -18,5 +19,12 @@ describe("time-zone date handling", () => {
   it("validates IANA time-zone identifiers", () => {
     expect(isValidTimeZone("Asia/Shanghai")).toBe(true);
     expect(isValidTimeZone("Mars/Olympus")).toBe(false);
+  });
+
+  it("extracts only explicit IANA time zones", () => {
+    expect(extractTimeZone("my preferred time zone is America/New_York")).toBe(
+      "America/New_York"
+    );
+    expect(extractTimeZone("I am in New York")).toBe(null);
   });
 });

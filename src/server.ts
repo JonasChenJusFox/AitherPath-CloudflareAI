@@ -39,6 +39,7 @@ import {
   type PendingActionToolName
 } from "./agent/pendingActions";
 import type { MemoryEntry } from "./agent/types";
+import { extractTimeZone } from "./agent/time";
 
 type MemorySaveResult =
   | {
@@ -52,6 +53,22 @@ type MemorySaveResult =
       status: "saved";
       memories: MemoryEntry[];
     };
+
+function preferredTimeZoneFromMemory(memories: MemoryEntry[]) {
+  for (const memory of memories) {
+    if (/time.?zone|timezone|tz/i.test(memory.key)) {
+      const direct = extractTimeZone(memory.value);
+      if (direct) return direct;
+    }
+
+    if (/preferred|profile|time.?zone|timezone/i.test(memory.value)) {
+      const fromSummary = extractTimeZone(memory.value);
+      if (fromSummary) return fromSummary;
+    }
+  }
+
+  return null;
+}
 
 function redirectToCanonicalUrl(request: Request) {
   const url = new URL(request.url);
@@ -345,9 +362,7 @@ export class ChatAgent extends AIChatAgent<Env> {
     return payload.data || this.saveMemoryValue(key, value);
   }
 
-  private async memoryContext() {
-    const memories = await this.listSharedMemory();
-
+  private memoryContext(memories: MemoryEntry[]) {
     if (memories.length === 0) {
       return "No saved user memory yet.";
     }
@@ -550,9 +565,18 @@ export class ChatAgent extends AIChatAgent<Env> {
       return new Response(message, { status: 503 });
     }
 
-    const preferences = this.getPreferences();
     const memorySaveResult = await this.autoSaveExplicitMemory(latestUserText);
-    const memoryContext = await this.memoryContext();
+    const explicitTimeZone = /\b(?:time\s*zone|timezone|tz|preferred)\b/i.test(
+      latestUserText
+    )
+      ? extractTimeZone(latestUserText)
+      : null;
+    if (explicitTimeZone) {
+      await this.saveSharedMemoryValue("profile:timezone", explicitTimeZone);
+    }
+    const memories = await this.listSharedMemory();
+    const memoryTimeZone = preferredTimeZoneFromMemory(memories);
+    const memoryContext = this.memoryContext(memories);
     const memorySaveInstruction =
       memorySaveResult.status === "saved"
         ? `The server saved the explicitly requested memory keys: ${memorySaveResult.memories
@@ -581,7 +605,7 @@ export class ChatAgent extends AIChatAgent<Env> {
       providerOptions: agentModel.providerOptions,
       system: buildSystemPrompt({
         now: new Date(),
-        timeZone: preferences.timeZone,
+        timeZone: memoryTimeZone,
         memoryContext,
         memorySaveInstruction
       }),
