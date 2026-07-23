@@ -1,53 +1,58 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "workinghelper-agent",
-  "main": "src/server.ts",
-  "compatibility_date": "2026-03-02",
-  "compatibility_flags": ["nodejs_compat"],
-  "vars": {
-    "LLM_PROVIDER": "openai",
-    "OPENAI_MODEL": "gpt-5.4-mini",
-    "OPENAI_EMBEDDING_MODEL": "text-embedding-3-small"
-  },
-  "ai": {
-    "binding": "AI",
-    "remote": true
-  },
-  "vectorize": [
-    {
-      "binding": "MEMORY_INDEX",
-      "index_name": "aitherpath-memory"
-    }
-  ],
-  "workflows": [
-    {
-      "name": "schedule-meeting-workflow",
-      "binding": "SCHEDULE_MEETING_WORKFLOW",
-      "class_name": "ScheduleMeetingWorkflow"
-    }
-  ],
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": true
-  },
-  "durable_objects": {
-    "bindings": [
-      {
-        "class_name": "ChatAgent",
-        "name": "ChatAgent"
-      }
-    ]
-  },
-  "migrations": [
-    {
-      "new_sqlite_classes": ["ChatAgent"],
-      "tag": "v1"
-    }
-  ],
-  "observability": {
-    "enabled": true
-  },
-  "upload_source_maps": true
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "workinghelper-agent",
+	"main": "src/server.ts",
+	"compatibility_date": "2026-03-02",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		"LLM_PROVIDER": "openai",
+		"OPENAI_MODEL": "gpt-5.4-mini",
+		"OPENAI_EMBEDDING_MODEL": "text-embedding-3-small"
+	},
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
+	"vectorize": [
+		{
+			"binding": "MEMORY_INDEX",
+			"index_name": "aitherpath-memory",
+			"remote": true
+		}
+	],
+	"workflows": [
+		{
+			"name": "schedule-meeting-workflow",
+			"binding": "SCHEDULE_MEETING_WORKFLOW",
+			"class_name": "ScheduleMeetingWorkflow"
+		}
+	],
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": true
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"class_name": "ChatAgent",
+				"name": "ChatAgent"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"new_sqlite_classes": [
+				"ChatAgent"
+			],
+			"tag": "v1"
+		}
+	],
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true
 }
