@@ -1,4 +1,5 @@
 import type { PendingActionService } from "./pendingActions";
+import type { ScheduleMeetingWorkflowParams } from "../workflows/scheduleMeeting";
 
 export type ToolErrorCode =
   | "CONFIGURATION_ERROR"
@@ -35,6 +36,9 @@ export type AgentToolContext = {
   latestUserText: string;
   getGoogleAccessToken: () => Promise<string | null>;
   saveMemory: (key: string, value: string) => Promise<MemoryEntry>;
+  startMeetingWorkflow?: (
+    params: ScheduleMeetingWorkflowParams
+  ) => Promise<string>;
   pendingActions: PendingActionService;
 };
 

@@ -42,6 +42,16 @@ import {
 } from "./agent/pendingActions";
 import type { MemoryEntry } from "./agent/types";
 import { extractTimeZone } from "./agent/time";
+import { indexMemory, retrieveRelevantMemories } from "./agent/memoryRag";
+import type { ScheduleMeetingWorkflowParams } from "./workflows/scheduleMeeting";
+import {
+  createCalendarEvent,
+  deleteCalendarEvent,
+  listCalendarEvents,
+  type CreateCalendarEventInput
+} from "./google/calendar";
+import { searchContacts } from "./google/contacts";
+import { sendGmailMessage } from "./google/gmail";
 
 type MemorySaveResult =
   | {
@@ -71,6 +81,28 @@ const profileMemoryExtractionSchema = z.object({
 });
 
 type ProfileMemoryExtraction = z.infer<typeof profileMemoryExtractionSchema>;
+
+function encodeBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function decodeBase64(value: string) {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+async function deriveOAuthKey(secret: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(secret)
+  );
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, [
+    "encrypt",
+    "decrypt"
+  ]);
+}
 
 function preferredTimeZoneFromMemory(memories: MemoryEntry[]) {
   for (const memory of memories) {
@@ -142,6 +174,23 @@ export class ChatAgent extends AIChatAgent<Env> {
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
         status TEXT NOT NULL
+      )
+    `;
+
+    this.sql`
+      CREATE TABLE IF NOT EXISTS active_workflows (
+        id TEXT PRIMARY KEY,
+        workflow_name TEXT NOT NULL,
+        workflow_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `;
+
+    this.sql`
+      CREATE TABLE IF NOT EXISTS google_credentials (
+        id TEXT PRIMARY KEY,
+        encrypted_refresh_token TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
       )
     `;
   }
@@ -287,8 +336,24 @@ export class ChatAgent extends AIChatAgent<Env> {
     return updated;
   }
 
-  private listMemory() {
+  private listMemory(key?: string) {
     this.ensureWeek3Tables();
+    if (key) {
+      return this.sql<{
+        key: string;
+        value: string;
+        created_at: number;
+        updated_at: number;
+      }>`SELECT key, value, created_at, updated_at FROM session_memory WHERE key = ${key} LIMIT 1`.map(
+        (row) => ({
+          key: row.key,
+          value: row.value,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        })
+      );
+    }
+
     return this.sql<{
       key: string;
       value: string;
@@ -331,17 +396,21 @@ export class ChatAgent extends AIChatAgent<Env> {
     };
   }
 
-  private async listSharedMemory() {
+  private async listSharedMemory(key?: string) {
     if (!this.memoryOwnerName) {
-      return this.listMemory();
+      return this.listMemory(key);
     }
 
     const agentId = this.env.ChatAgent.idFromName(
       `memory:${this.memoryOwnerName}`
     );
     const agent = this.env.ChatAgent.get(agentId);
+    const memoryUrl = new URL(
+      "https://workinghelper.com/internal/week3/memory"
+    );
+    if (key) memoryUrl.searchParams.set("key", key);
     const response = await agent.fetch(
-      new Request("https://workinghelper.com/internal/week3/memory", {
+      new Request(memoryUrl, {
         headers: {
           "X-WorkingHelper-Internal": "week3"
         }
@@ -356,7 +425,9 @@ export class ChatAgent extends AIChatAgent<Env> {
 
   private async saveSharedMemoryValue(key: string, value: string) {
     if (!this.memoryOwnerName) {
-      return this.saveMemoryValue(key, value);
+      const memory = this.saveMemoryValue(key, value);
+      await indexMemory(this.env, "anonymous", memory).catch(() => false);
+      return memory;
     }
 
     const agentId = this.env.ChatAgent.idFromName(
@@ -377,7 +448,98 @@ export class ChatAgent extends AIChatAgent<Env> {
       data?: MemoryEntry;
     }>();
 
-    return payload.data || this.saveMemoryValue(key, value);
+    const memory = payload.data || this.saveMemoryValue(key, value);
+    await indexMemory(this.env, this.memoryOwnerName, memory).catch(
+      () => false
+    );
+    return memory;
+  }
+
+  private async retrieveMemoryContext(query: string) {
+    try {
+      const memories = await retrieveRelevantMemories(
+        this.env,
+        this.memoryOwnerName || "anonymous",
+        query,
+        5
+      );
+      if (memories.length > 0) return this.memoryContext(memories);
+
+      // One-time-friendly migration path: legacy SQLite memories are used to
+      // seed the vector index when a user has no indexed matches yet.
+      const legacyMemories = await this.listSharedMemory();
+      await Promise.all(
+        legacyMemories.map((memory) =>
+          indexMemory(
+            this.env,
+            this.memoryOwnerName || "anonymous",
+            memory
+          ).catch(() => false)
+        )
+      );
+      return this.memoryContext(legacyMemories.slice(0, 5));
+    } catch {
+      return "No relevant saved user memory found.";
+    }
+  }
+
+  private async persistRefreshToken(refreshToken: string) {
+    const secret = this.env.OAUTH_TOKEN_ENCRYPTION_KEY?.trim();
+    if (!secret || !refreshToken) return;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveOAuthKey(secret);
+    const encrypted = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      new TextEncoder().encode(refreshToken)
+    );
+    this.ensureWeek3Tables();
+    this.sql`
+      INSERT OR REPLACE INTO google_credentials (id, encrypted_refresh_token, updated_at)
+      VALUES (${"default"}, ${`${encodeBase64(iv)}.${encodeBase64(new Uint8Array(encrypted))}`}, ${Date.now()})
+    `;
+  }
+
+  private async getPersistedRefreshToken() {
+    const secret = this.env.OAUTH_TOKEN_ENCRYPTION_KEY?.trim();
+    if (!secret) return null;
+    this.ensureWeek3Tables();
+    const rows = this.sql<{ encrypted_refresh_token: string }>`
+      SELECT encrypted_refresh_token FROM google_credentials WHERE id = ${"default"} LIMIT 1
+    `;
+    const encoded = rows[0]?.encrypted_refresh_token;
+    if (!encoded) return null;
+    try {
+      const [ivEncoded, ciphertextEncoded] = encoded.split(".");
+      const key = await deriveOAuthKey(secret);
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: decodeBase64(ivEncoded) },
+        key,
+        decodeBase64(ciphertextEncoded)
+      );
+      return new TextDecoder().decode(decrypted);
+    } catch {
+      return null;
+    }
+  }
+
+  private async cancelActiveWorkflowForIntentChange(text: string) {
+    if (
+      !/calendar|meeting|appointment|schedule|instead|actually|contact/i.test(
+        text
+      )
+    ) {
+      return;
+    }
+    this.ensureWeek3Tables();
+    const active = this.sql<{ id: string; workflow_id: string }>`
+      SELECT id, workflow_id FROM active_workflows
+      WHERE workflow_name = ${"SCHEDULE_MEETING_WORKFLOW"}
+      LIMIT 1
+    `;
+    if (!active[0]) return;
+    await this.terminateWorkflow(active[0].workflow_id).catch(() => undefined);
+    this.sql`DELETE FROM active_workflows WHERE id = ${active[0].id}`;
   }
 
   private memoryContext(memories: MemoryEntry[]) {
@@ -539,6 +701,8 @@ If there is no durable profile fact, return an empty memories array.`,
       }
 
       this.gmailCookieHeader = request.headers.get("Cookie") || "";
+      const refreshToken = getGoogleRefreshToken(request);
+      if (refreshToken) await this.persistRefreshToken(refreshToken);
       try {
         const body = await request.json<{ memoryOwnerName?: string }>();
         this.memoryOwnerName = body.memoryOwnerName?.trim() || "";
@@ -575,7 +739,9 @@ If there is no durable profile fact, return an empty memories array.`,
           url.pathname === "/internal/week3/memory" &&
           request.method === "GET"
         ) {
-          return successJson({ memories: this.listMemory() });
+          return successJson({
+            memories: this.listMemory(url.searchParams.get("key") || undefined)
+          });
         }
 
         if (
@@ -621,10 +787,17 @@ If there is no durable profile fact, return an empty memories array.`,
 
     const refreshToken = getGoogleRefreshToken(request);
     const config = getGoogleOAuthConfig(this.env);
-    if (!refreshToken || !config) return null;
+    const persistedRefreshToken =
+      refreshToken || (await this.getPersistedRefreshToken());
+    if (!persistedRefreshToken || !config) return null;
 
     // Refresh only on the server so the browser never sees the Google client secret.
-    const tokens = await refreshGoogleAccessToken(config, refreshToken);
+    const tokens = await refreshGoogleAccessToken(
+      config,
+      persistedRefreshToken
+    );
+    if (tokens.refresh_token)
+      await this.persistRefreshToken(tokens.refresh_token);
     return tokens.access_token;
   }
 
@@ -643,6 +816,7 @@ If there is no durable profile fact, return an empty memories array.`,
     }
 
     const memorySaveResult = await this.autoSaveExplicitMemory(latestUserText);
+    await this.cancelActiveWorkflowForIntentChange(latestUserText);
     const automaticallyExtractedMemories = await this.autoExtractProfileMemory(
       agentModel,
       latestUserText
@@ -655,9 +829,9 @@ If there is no durable profile fact, return an empty memories array.`,
     if (explicitTimeZone) {
       await this.saveSharedMemoryValue("profile:timezone", explicitTimeZone);
     }
-    const memories = await this.listSharedMemory();
-    const memoryTimeZone = preferredTimeZoneFromMemory(memories);
-    const memoryContext = this.memoryContext(memories);
+    const timeZoneMemories = await this.listSharedMemory("profile:timezone");
+    const memoryTimeZone = preferredTimeZoneFromMemory(timeZoneMemories);
+    const memoryContext = await this.retrieveMemoryContext(latestUserText);
     const memorySaveInstruction =
       memorySaveResult.status === "saved"
         ? `The server saved the explicitly requested memory keys: ${memorySaveResult.memories
@@ -684,6 +858,7 @@ If there is no durable profile fact, return an empty memories array.`,
       latestUserText,
       getGoogleAccessToken: () => this.getGmailAccessToken(),
       saveMemory: (key, value) => this.saveSharedMemoryValue(key, value),
+      startMeetingWorkflow: (params) => this.startMeetingWorkflow(params),
       pendingActions
     });
 
@@ -712,7 +887,147 @@ If there is no durable profile fact, return an empty memories array.`,
       onError: safeModelErrorMessage
     });
   }
+
+  async startMeetingWorkflow(params: ScheduleMeetingWorkflowParams) {
+    this.ensureWeek3Tables();
+    const active = this.sql<{ id: string; workflow_id: string }>`
+      SELECT id, workflow_id FROM active_workflows
+      WHERE workflow_name = ${"SCHEDULE_MEETING_WORKFLOW"}
+      LIMIT 1
+    `;
+    if (active[0]) {
+      await this.terminateWorkflow(active[0].workflow_id).catch(
+        () => undefined
+      );
+      this.sql`DELETE FROM active_workflows WHERE id = ${active[0].id}`;
+    }
+
+    const workflowId = await this.runWorkflow(
+      "SCHEDULE_MEETING_WORKFLOW",
+      params,
+      {
+        metadata: { memoryOwnerName: this.memoryOwnerName }
+      }
+    );
+    this.sql`
+      INSERT OR REPLACE INTO active_workflows (id, workflow_name, workflow_id, created_at)
+      VALUES (${"schedule-meeting"}, ${"SCHEDULE_MEETING_WORKFLOW"}, ${workflowId}, ${Date.now()})
+    `;
+    return workflowId;
+  }
+
+  async workflowSearchContact(query: string) {
+    const token = await this.getGmailAccessToken();
+    if (!token) throw new Error("Google is not connected.");
+    const contacts = await searchContacts(token, query, 10);
+    if (contacts.length === 0)
+      throw new Error(`No contact found for ${query}.`);
+    if (contacts.length > 1)
+      throw new Error(`Multiple contacts matched ${query}.`);
+    const email = contacts[0].emails[0];
+    if (!email) throw new Error(`Contact ${query} has no email address.`);
+    return { displayName: contacts[0].displayName, email };
+  }
+
+  async workflowCheckAvailability(input: {
+    startDateTime: string;
+    endDateTime: string;
+    timeZone: string;
+  }) {
+    const token = await this.getGmailAccessToken();
+    if (!token) throw new Error("Google is not connected.");
+    const result = await listCalendarEvents(token, {
+      timeMin: new Date(input.startDateTime).toISOString(),
+      timeMax: new Date(input.endDateTime).toISOString(),
+      timeZone: input.timeZone,
+      maxResults: 50
+    });
+    const start = new Date(input.startDateTime).getTime();
+    const end = new Date(input.endDateTime).getTime();
+    return result.events.filter((event) => {
+      const eventStart = new Date(event.start).getTime();
+      const eventEnd = new Date(event.end).getTime();
+      return eventStart < end && eventEnd > start;
+    });
+  }
+
+  async workflowCreateMeeting(input: {
+    event: CreateCalendarEventInput;
+    conflicts: Array<{ id: string }>;
+    overwriteExisting: boolean;
+  }) {
+    const token = await this.getGmailAccessToken();
+    if (!token) throw new Error("Google is not connected.");
+    if (input.conflicts.length > 0 && !input.overwriteExisting) {
+      throw new Error("The selected time overlaps an existing event.");
+    }
+    if (input.overwriteExisting) {
+      for (const conflict of input.conflicts) {
+        if (conflict.id) await deleteCalendarEvent(token, conflict.id);
+      }
+    }
+    return createCalendarEvent(token, input.event);
+  }
+
+  async workflowSendNotification(input: {
+    to: string;
+    subject: string;
+    body: string;
+  }) {
+    const token = await this.getGmailAccessToken();
+    if (!token) throw new Error("Google is not connected.");
+    return sendGmailMessage(token, input);
+  }
+
+  async onWorkflowProgress(
+    workflowName: string,
+    instanceId: string,
+    progress: unknown
+  ) {
+    this.broadcast(
+      JSON.stringify({
+        type: "workflow-progress",
+        workflowName,
+        instanceId,
+        progress
+      })
+    );
+  }
+
+  async onWorkflowComplete(
+    workflowName: string,
+    instanceId: string,
+    result?: unknown
+  ) {
+    this.sql`DELETE FROM active_workflows WHERE workflow_id = ${instanceId}`;
+    this.broadcast(
+      JSON.stringify({
+        type: "workflow-complete",
+        workflowName,
+        instanceId,
+        result
+      })
+    );
+  }
+
+  async onWorkflowError(
+    workflowName: string,
+    instanceId: string,
+    error: unknown
+  ) {
+    this.sql`DELETE FROM active_workflows WHERE workflow_id = ${instanceId}`;
+    this.broadcast(
+      JSON.stringify({
+        type: "workflow-error",
+        workflowName,
+        instanceId,
+        error
+      })
+    );
+  }
 }
+
+export { ScheduleMeetingWorkflow } from "./workflows/scheduleMeeting";
 
 export default {
   async fetch(request: Request, env: Env) {

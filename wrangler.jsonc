@@ -6,12 +6,26 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "LLM_PROVIDER": "openai",
-    "OPENAI_MODEL": "gpt-5.4-mini"
+    "OPENAI_MODEL": "gpt-5.4-mini",
+    "OPENAI_EMBEDDING_MODEL": "text-embedding-3-small"
   },
   "ai": {
     "binding": "AI",
     "remote": true
   },
+  "vectorize": [
+    {
+      "binding": "MEMORY_INDEX",
+      "index_name": "aitherpath-memory"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "schedule-meeting-workflow",
+      "binding": "SCHEDULE_MEETING_WORKFLOW",
+      "class_name": "ScheduleMeetingWorkflow"
+    }
+  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

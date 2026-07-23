@@ -8,7 +8,8 @@ export const AGENT_TOOL_NAMES = [
   "createCalendarEvent",
   "searchGoogleContacts",
   "listGoogleContacts",
-  "saveSessionMemory"
+  "saveSessionMemory",
+  "scheduleMeetingWorkflow"
 ] as const;
 
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
@@ -37,6 +38,7 @@ export function selectActiveTools(message: string): AgentToolName[] {
     selected.add("checkCalendarAvailability");
     selected.add("createCalendarEvent");
     selected.add("searchGoogleContacts");
+    selected.add("scheduleMeetingWorkflow");
   }
   if (/\b(contact|contacts|phone|email address|who is)\b/.test(text)) {
     selected.add("searchGoogleContacts");

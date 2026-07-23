@@ -5,7 +5,11 @@ interface __BaseEnv_Env {
 	ASSETS: Fetcher;
 	LLM_PROVIDER: "openai";
 	OPENAI_API_KEY?: string;
+	OAUTH_TOKEN_ENCRYPTION_KEY?: string;
 	OPENAI_MODEL: "gpt-5.4-mini";
+	OPENAI_EMBEDDING_MODEL: string;
+	MEMORY_INDEX: VectorizeIndex;
+	SCHEDULE_MEETING_WORKFLOW: Workflow<unknown>;
 	JOOBLE_API_KEY: string;
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;

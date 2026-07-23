@@ -6,7 +6,7 @@
 - Company: **AitherPath**
 - Repository: **AitherPath-CloudflareAI**
 
-Week 4 adds OpenAI as the primary model provider, a typed modular tool registry, bounded multi-step tool execution, and server-enforced approval for email and calendar writes. The existing Workers AI provider remains available as an explicit fallback.
+Week 4 adds OpenAI as the primary model provider, a typed modular tool registry, bounded multi-step tool execution, and server-enforced approval for email and calendar writes. Week 5 adds RAG memory retrieval with OpenAI Embeddings + Cloudflare Vectorize and a durable meeting workflow with retries. The existing Workers AI provider remains available as an explicit fallback.
 
 ## Deployment URLs
 
@@ -22,6 +22,8 @@ The repository, Worker name, and production domain intentionally keep their exis
 - Cloudflare Agents SDK
 - Cloudflare Workers AI
 - OpenAI API
+- OpenAI Embeddings
+- Cloudflare Vectorize
 - Vercel AI SDK OpenAI provider
 - Durable Objects
 - React
@@ -350,7 +352,7 @@ curl -X POST https://workinghelper.com/api/memory \
   -d '{"key":"job_search_goal","value":"Frontend roles in New York"}'
 ```
 
-Preferences and memory are stored in the authenticated user's `ChatAgent` Durable Object SQLite storage. Contact search results are not persisted.
+SQLite remains the source of truth for structured profile memory. Memory text is embedded with OpenAI Embeddings and indexed in Cloudflare Vectorize; chat turns retrieve only the most relevant top-K memories instead of exporting the entire SQLite table into every prompt. Contact search results are not persisted.
 
 ## Deployment
 
@@ -360,11 +362,22 @@ Deploy to Cloudflare:
 npm run deploy
 ```
 
+Before the first RAG deployment, create the Vectorize index once and configure the encryption secret used by durable workflows:
+
+```bash
+npx wrangler vectorize create aitherpath-memory --dimensions=1536 --metric=cosine
+npx wrangler secret put OAUTH_TOKEN_ENCRYPTION_KEY
+```
+
 The deployed Worker uses:
 
 - `ChatAgent` Durable Object for agent state
 - OpenAI API as the default LLM provider
 - `AI` binding for the optional Workers AI fallback
+- `MEMORY_INDEX` Vectorize binding for semantic memory retrieval
+- `SCHEDULE_MEETING_WORKFLOW` durable Workflow binding for multi-step meeting automation
+- `OPENAI_EMBEDDING_MODEL` (default `text-embedding-3-small`)
+- `OAUTH_TOKEN_ENCRYPTION_KEY` secret for encrypted Durable Workflow OAuth refresh-token recovery
 - `OPENAI_API_KEY` secret for OpenAI
 - `JOOBLE_API_KEY` secret for Jooble
 - Google OAuth secrets for Gmail API
@@ -408,6 +421,21 @@ Available agent tools:
 - `searchGoogleContacts`: searches a connected Google Contacts account
 - `listGoogleContacts`: lists Google Contacts
 - `saveSessionMemory`: saves an explicitly requested stable preference or goal
+- `scheduleMeetingWorkflow`: runs contact lookup → availability check → calendar creation → Gmail notification with durable retries
+
+## Week 5 Agent Orchestration
+
+The Week 5 workflow is started only for a complete meeting request with a named contact, exact start/end time, title, and time zone. Each external operation is a durable Workflow step with exponential retry:
+
+```text
+search Google Contacts
+→ check Calendar availability
+→ ask before overwrite when a conflict exists
+→ create the calendar event
+→ send the Gmail invitation notification
+```
+
+The Agent reports workflow progress, completion, and errors back over the existing WebSocket. If the user changes the contact, time, or intent before starting the workflow, the Agent should discard the old proposal and build a new one.
 
 ### `src/jobSearch.ts`
 
@@ -424,7 +452,7 @@ type JobSummary = {
 
 ### `wrangler.jsonc`
 
-Configures the Worker name, Workers AI binding, Durable Object binding, static assets, and observability.
+Configures the Worker name, Workers AI binding, Durable Object and SQLite migration, Vectorize memory index, durable Workflow binding, static assets, and observability.
 
 ### `src/auth/googleRoutes.ts`
 
@@ -457,5 +485,5 @@ npm run check
 - Reasoning output is not sent to the browser.
 - Agent email/calendar writes require approval. The existing direct HTTP write APIs remain available for authenticated trusted clients and do not use the chat approval UI.
 - OAuth tokens are still stored in secure HttpOnly cookies for this demo. A production hardening phase should move refresh tokens to encrypted server-side storage.
-- The pending-action table provides short-lived confirmation and duplicate prevention; it is not a Week 5 Cloudflare Workflow.
+- The pending-action table provides short-lived confirmation and duplicate prevention for individual writes; the Week 5 meeting flow uses Cloudflare Workflows for durable multi-step execution and retries.
 - The UI supports image attachments, but tool inputs and provider support determine how an image is used.
