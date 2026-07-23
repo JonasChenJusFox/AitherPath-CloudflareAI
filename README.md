@@ -12,7 +12,7 @@
 - Company: **AitherPath**
 - Repository: **AitherPath-CloudflareAI**
 
-Week 4 adds OpenAI as the primary model provider, a typed modular tool registry, bounded multi-step tool execution, and server-enforced approval for email and calendar writes. Week 5 adds RAG memory retrieval with OpenAI Embeddings + Cloudflare Vectorize and a durable meeting workflow with retries. The existing Workers AI provider remains available as an explicit fallback.
+The assistant uses OpenAI as its primary model provider, with Workers AI available as an explicit fallback. It supports typed tools, durable profile memory with OpenAI Embeddings and Cloudflare Vectorize, approval-gated external writes, and retryable calendar workflows.
 
 ## Deployment URLs
 
@@ -88,7 +88,7 @@ The model can decide to call `searchJobs`, receive job results from Jooble, and 
 │   ├── google/        # Gmail, Calendar, and People API helpers
 │   ├── routes/        # Direct HTTP API routes
 │   ├── schemas/       # Zod validation schemas
-│   ├── storage/       # Temporary cookie session helpers for Week 2
+│   ├── storage/       # Session and storage helpers
 │   ├── types/         # Shared TypeScript types
 │   ├── utils/         # Shared API response and error helpers
 │   ├── server.ts      # ChatAgent composition, storage, and Worker routes
@@ -139,7 +139,7 @@ npm run test
 
 ## Model Provider Configuration
 
-OpenAI is the default Week 4 provider. `OPENAI_API_KEY` is read only by the Worker and must never be exposed to React, placed in `wrangler.jsonc`, or committed.
+OpenAI is the default provider. `OPENAI_API_KEY` is read only by the Worker and must never be exposed to React, placed in `wrangler.jsonc`, or committed.
 
 Local `.dev.vars` configuration:
 
@@ -241,7 +241,7 @@ https://www.googleapis.com/auth/calendar.events
 https://www.googleapis.com/auth/contacts.readonly
 ```
 
-If you connected Gmail before Week 3, click `Switch Gmail` once and grant the new Calendar and Contacts scopes.
+If you previously connected Gmail, click `Switch Gmail` once and grant the Calendar and Contacts scopes when prompted.
 
 Implemented routes:
 
@@ -265,7 +265,7 @@ WORKINGHELPER_COOKIE='paste_the_workinghelper_cookie_header_here' \
 
 The script calls `POST /api/gmail/send`, so it uses the same Gmail OAuth flow as the web app.
 
-## Week 4 Agent Tools
+## Agent Tools
 
 The LLM can call only tools registered in `src/agent/toolRegistry.ts`. Each tool has a bounded Zod schema, input normalization, a focused description, and a structured success or safe error result.
 
@@ -306,9 +306,9 @@ Pending confirmations expire after 10 minutes. A changed action cancels the olde
 
 Relative calendar dates are resolved using the saved user time zone. Calendar writes require RFC3339 timestamps with offsets, a valid IANA time zone, and an end time after the start time.
 
-## Week 3 APIs
+## Google Integration APIs
 
-Week 3 endpoints are directly callable and require a connected Google session:
+These endpoints are directly callable and require a connected Google session:
 
 | Route                       | Purpose                                     |
 | --------------------------- | ------------------------------------------- |
@@ -429,9 +429,9 @@ Available agent tools:
 - `saveSessionMemory`: saves an explicitly requested stable preference or goal
 - `scheduleMeetingWorkflow`: runs contact lookup → availability check → calendar creation → Gmail notification with durable retries
 
-## Week 5 Agent Orchestration
+## Durable Meeting Workflow
 
-The Week 5 workflow is started only for a complete meeting request with a named contact, exact start/end time, title, and time zone. Each external operation is a durable Workflow step with exponential retry:
+The meeting workflow is started only for a complete meeting request with a named contact, exact start/end time, title, and time zone. Each external operation is a durable Workflow step with exponential retry:
 
 ```text
 search Google Contacts
@@ -491,5 +491,5 @@ npm run check
 - Reasoning output is not sent to the browser.
 - Agent email/calendar writes require approval. The existing direct HTTP write APIs remain available for authenticated trusted clients and do not use the chat approval UI.
 - OAuth tokens are still stored in secure HttpOnly cookies for this demo. A production hardening phase should move refresh tokens to encrypted server-side storage.
-- The pending-action table provides short-lived confirmation and duplicate prevention for individual writes; the Week 5 meeting flow uses Cloudflare Workflows for durable multi-step execution and retries.
+- The pending-action table provides short-lived confirmation and duplicate prevention for individual writes; meeting requests use Cloudflare Workflows for durable multi-step execution and retries.
 - The UI supports image attachments, but tool inputs and provider support determine how an image is used.
