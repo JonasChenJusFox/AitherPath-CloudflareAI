@@ -1,5 +1,11 @@
 # AitherPath AI Assistant Agent
 
+[![CI](https://github.com/JonasChenJusFox/AitherPath-CloudflareAI/actions/workflows/ci.yml/badge.svg)](https://github.com/JonasChenJusFox/AitherPath-CloudflareAI/actions/workflows/ci.yml)
+![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6?logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-8.1.0-646CFF?logo=vite&logoColor=white)
+![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
+
 **AitherPath AI Assistant Agent** is AitherPath's AI career copilot built on Cloudflare. Users chat with the assistant to find current opportunities and coordinate the communication, calendar events, contacts, and preferences around their job search. The agent calls real tools backed by the Jooble and Google APIs.
 
 - Product: **AitherPath AI Assistant Agent**
