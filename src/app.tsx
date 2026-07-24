@@ -179,7 +179,7 @@ function WelcomeScreen({
           </div>
           <Badge variant="secondary">AitherPath AI Assistant Agent</Badge>
           <h1 id="welcome-title" className="welcome-title">
-            Your work, in one conversation.
+            All work, in one.
           </h1>
           <p className="welcome-subtitle">
             Find opportunities, manage communication, and keep your next move
