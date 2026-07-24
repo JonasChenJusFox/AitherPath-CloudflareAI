@@ -48,7 +48,7 @@ async function gmailFetch<T>(
     if (response.status === 401) {
       throw new ApiError(
         "REAUTHORIZATION_REQUIRED",
-        "Google authorization expired. Please connect Google again.",
+        "Google authorization expired. Please log in again.",
         401
       );
     }

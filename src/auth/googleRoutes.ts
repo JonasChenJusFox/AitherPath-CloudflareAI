@@ -46,7 +46,7 @@ function getInvalidOAuthStateResponse() {
     {
       error: "Invalid Google OAuth callback state.",
       message:
-        "The Google login was started from a different browser profile, expired, or was restarted in another tab. Open AitherPath AI Assistant Agent and click Connect Gmail again in the same browser profile."
+        "The Google login was started from a different browser profile, expired, or was restarted in another tab. Open AitherPath AI Assistant Agent and click Log in again in the same browser profile."
     },
     { status: 400 }
   );

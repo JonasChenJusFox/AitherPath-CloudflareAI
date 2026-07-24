@@ -128,7 +128,7 @@ async function readGoogleApiError(response: Response) {
   if (response.status === 401) {
     return {
       code: "REAUTHORIZATION_REQUIRED" as const,
-      message: "Google authorization expired. Please connect Google again."
+      message: "Google authorization expired. Please log in again."
     };
   }
 
@@ -140,7 +140,7 @@ async function readGoogleApiError(response: Response) {
     return {
       code: "REAUTHORIZATION_REQUIRED" as const,
       message:
-        "Google Calendar permission is missing. Click Switch Gmail and approve Calendar access again."
+        "Google Calendar permission is missing. Click Switch account and approve Calendar access again."
     };
   }
 

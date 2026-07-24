@@ -17,14 +17,14 @@ export async function safeToolExecution<T>(
       if (error.code === "AUTHENTICATION_REQUIRED") {
         return toolFailure(
           "AUTHENTICATION_REQUIRED",
-          "Google is not connected. Connect Gmail before using this tool."
+          "Google is not connected. Log in with Google before using this tool."
         );
       }
 
       if (error.code === "REAUTHORIZATION_REQUIRED") {
         return toolFailure(
           "REAUTHORIZATION_REQUIRED",
-          "Google authorization expired. Please connect Google again."
+          "Google authorization expired. Please log in again."
         );
       }
 

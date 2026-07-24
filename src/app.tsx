@@ -35,7 +35,10 @@ import {
   ImageIcon,
   PencilSimpleIcon,
   CheckIcon,
-  ListIcon
+  ListIcon,
+  BriefcaseIcon,
+  CalendarBlankIcon,
+  ArrowRightIcon
 } from "@phosphor-icons/react";
 
 // Image attachments are optional, but the helper keeps the message format small and predictable.
@@ -155,6 +158,94 @@ function ThemeToggle() {
       onClick={toggle}
       aria-label="Toggle theme"
     />
+  );
+}
+
+function WelcomeScreen({
+  onLogin,
+  onAnonymousLogin
+}: {
+  onLogin: () => void;
+  onAnonymousLogin: () => void;
+}) {
+  return (
+    <main className="welcome-shell">
+      <div className="welcome-glow welcome-glow-one" aria-hidden="true" />
+      <div className="welcome-glow welcome-glow-two" aria-hidden="true" />
+      <section className="welcome-panel" aria-labelledby="welcome-title">
+        <div className="welcome-panel-inner">
+          <div className="welcome-mark" aria-hidden="true">
+            <ChatCircleDotsIcon size={22} weight="fill" />
+          </div>
+          <Badge variant="secondary">AitherPath AI Assistant Agent</Badge>
+          <h1 id="welcome-title" className="welcome-title">
+            Your work, in one conversation.
+          </h1>
+          <p className="welcome-subtitle">
+            Find opportunities, manage communication, and keep your next move
+            organized with an AI assistant that can take action for you.
+          </p>
+
+          <div
+            className="welcome-features"
+            aria-label="What the assistant can do"
+          >
+            <div className="welcome-feature">
+              <ChatCircleDotsIcon size={20} />
+              <div>
+                <strong>AI chat</strong>
+                <span>
+                  Ask naturally and keep context across conversations.
+                </span>
+              </div>
+            </div>
+            <div className="welcome-feature">
+              <PaperPlaneRightIcon size={20} />
+              <div>
+                <strong>Automate email</strong>
+                <span>Draft and send Gmail messages with your approval.</span>
+              </div>
+            </div>
+            <div className="welcome-feature">
+              <BriefcaseIcon size={20} />
+              <div>
+                <strong>Find jobs</strong>
+                <span>
+                  Search roles by title, location, and your preferences.
+                </span>
+              </div>
+            </div>
+            <div className="welcome-feature">
+              <CalendarBlankIcon size={20} />
+              <div>
+                <strong>Plan your calendar</strong>
+                <span>
+                  Check availability and schedule meetings with Google Calendar.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="welcome-actions">
+            <button type="button" className="welcome-primary" onClick={onLogin}>
+              Log in with Google
+              <ArrowRightIcon size={18} />
+            </button>
+            <button
+              type="button"
+              className="welcome-secondary"
+              onClick={onAnonymousLogin}
+            >
+              Anonymous login
+            </button>
+          </div>
+          <p className="welcome-footnote">
+            Log in to keep your profile memory across chats and devices.
+            Anonymous mode is for quick testing.
+          </p>
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -324,12 +415,10 @@ function ToolPartView({
 
 function Chat({
   agentName,
-  userId,
   onMessageSent,
   onOpenSidebar
 }: {
   agentName: string;
-  userId: string;
   onMessageSent: (text: string) => void;
   onOpenSidebar: () => void;
 }) {
@@ -372,13 +461,13 @@ function Chat({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ memoryOwnerName: userId })
+          body: JSON.stringify({})
         }
       );
     } catch (error) {
       console.error("Failed to sync agent auth:", error);
     }
-  }, [agentName, userId]);
+  }, [agentName]);
 
   const sendTextPrompt = useCallback(
     async (text: string) => {
@@ -995,7 +1084,7 @@ function SidebarContent({
           }}
           className="w-full justify-center mb-3"
         >
-          {gmailStatus.connected ? "Switch Gmail" : "Connect Gmail"}
+          {gmailStatus.connected ? "Switch account" : "Log in"}
         </Button>
         {gmailStatus.connected && (
           <Button
@@ -1003,7 +1092,7 @@ function SidebarContent({
             onClick={disconnectGmail}
             className="w-full justify-center mb-3"
           >
-            Disconnect Gmail
+            Log out
           </Button>
         )}
         <div className="space-y-1">
@@ -1011,7 +1100,7 @@ function SidebarContent({
             Local user: {userId.slice(-8)}
           </Text>
           <Text size="xs" variant="secondary">
-            Gmail: {gmailStatus.email || "Not connected"}
+            Google account: {gmailStatus.email || "Not connected"}
           </Text>
         </div>
       </div>
@@ -1020,6 +1109,7 @@ function SidebarContent({
 }
 
 export default function App() {
+  const [entryMode, setEntryMode] = useState<"welcome" | "chat">("welcome");
   const [userId] = useState(getOrCreateUserId);
   const [reviews, setReviews] = useState(() => loadChatReviews(userId));
   const [activeChatId, setActiveChatId] = useState(() => reviews[0].id);
@@ -1040,7 +1130,9 @@ export default function App() {
     try {
       const response = await fetch("/api/gmail/status");
       if (!response.ok) return;
-      setGmailStatus((await response.json()) as GmailStatus);
+      const status = (await response.json()) as GmailStatus;
+      setGmailStatus(status);
+      if (status.connected) setEntryMode("chat");
     } catch (error) {
       console.error("Failed to load Gmail status:", error);
     }
@@ -1064,6 +1156,7 @@ export default function App() {
       connected: false,
       email: undefined
     }));
+    setEntryMode("welcome");
   }, []);
 
   const createNewChat = useCallback(() => {
@@ -1160,6 +1253,17 @@ export default function App() {
     ? gmailStatus.email || "gmail-connected"
     : "gmail-disconnected";
 
+  if (entryMode === "welcome") {
+    return (
+      <WelcomeScreen
+        onLogin={() => {
+          window.location.href = "/auth/google";
+        }}
+        onAnonymousLogin={() => setEntryMode("chat")}
+      />
+    );
+  }
+
   return (
     <Suspense
       fallback={
@@ -1234,7 +1338,6 @@ export default function App() {
         <Chat
           key={`${activeChatId}:${gmailConnectionKey}`}
           agentName={agentName}
-          userId={userId}
           onMessageSent={updateActiveReview}
           onOpenSidebar={() => setMobileSidebarOpen(true)}
         />

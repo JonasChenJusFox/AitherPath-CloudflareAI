@@ -11,3 +11,226 @@ body,
   height: 100%;
   margin: 0;
 }
+
+.welcome-shell {
+  position: relative;
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  overflow: hidden;
+  padding: 40px 20px;
+  background:
+    radial-gradient(circle at 18% 12%, rgb(255 193 119 / 24%), transparent 34%),
+    radial-gradient(circle at 84% 88%, rgb(133 173 255 / 22%), transparent 36%),
+    var(--kumo-color-base, #f8fafc);
+}
+
+.welcome-glow {
+  position: absolute;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  filter: blur(8px);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.welcome-glow-one {
+  top: -120px;
+  left: 12%;
+  background: rgb(255 153 72 / 22%);
+  animation: welcome-float 8s ease-in-out infinite;
+}
+
+.welcome-glow-two {
+  right: 8%;
+  bottom: -140px;
+  background: rgb(72 126 255 / 18%);
+  animation: welcome-float 10s ease-in-out -2s infinite reverse;
+}
+
+.welcome-panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 760px);
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 75%);
+  border-radius: 32px;
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 30px 90px rgb(15 23 42 / 14%);
+  backdrop-filter: blur(20px);
+  animation: welcome-drop 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.welcome-panel-inner {
+  padding: clamp(30px, 7vw, 68px);
+  text-align: center;
+}
+
+.welcome-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 18px;
+  place-items: center;
+  border-radius: 16px;
+  color: #fff;
+  background: linear-gradient(145deg, #ff8b29, #ffb45c);
+  box-shadow: 0 12px 24px rgb(255 139 41 / 28%);
+}
+
+.welcome-title {
+  max-width: 620px;
+  margin: 22px auto 12px;
+  color: #171717;
+  font-size: clamp(2.2rem, 6vw, 4.3rem);
+  font-weight: 760;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.welcome-subtitle {
+  max-width: 560px;
+  margin: 0 auto;
+  color: #5f6570;
+  font-size: 1.08rem;
+  line-height: 1.65;
+}
+
+.welcome-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 34px 0;
+  text-align: left;
+}
+
+.welcome-feature {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgb(15 23 42 / 7%);
+  border-radius: 18px;
+  background: rgb(248 250 252 / 72%);
+  color: #f27c22;
+}
+
+.welcome-feature div {
+  display: grid;
+  gap: 3px;
+}
+
+.welcome-feature strong {
+  color: #252525;
+  font-size: 0.94rem;
+}
+
+.welcome-feature span {
+  color: #707783;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.welcome-actions {
+  display: grid;
+  gap: 10px;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.welcome-primary,
+.welcome-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.welcome-primary {
+  border: 0;
+  color: #fff;
+  background: #171717;
+  box-shadow: 0 10px 20px rgb(15 23 42 / 17%);
+}
+
+.welcome-secondary {
+  border: 1px solid rgb(15 23 42 / 12%);
+  color: #30343b;
+  background: rgb(255 255 255 / 62%);
+}
+
+.welcome-primary:hover,
+.welcome-secondary:hover {
+  transform: translateY(-2px);
+}
+
+.welcome-primary:hover {
+  box-shadow: 0 14px 26px rgb(15 23 42 / 23%);
+}
+
+.welcome-secondary:hover {
+  background: #fff;
+}
+
+.welcome-footnote {
+  max-width: 440px;
+  margin: 18px auto 0;
+  color: #8a909a;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+@keyframes welcome-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-42px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes welcome-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, 18px, 0) scale(1.08);
+  }
+}
+
+@media (max-width: 640px) {
+  .welcome-shell {
+    padding: 18px 12px;
+  }
+
+  .welcome-panel {
+    border-radius: 24px;
+  }
+
+  .welcome-features {
+    grid-template-columns: 1fr;
+    margin: 26px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-panel,
+  .welcome-glow-one,
+  .welcome-glow-two {
+    animation: none;
+  }
+}

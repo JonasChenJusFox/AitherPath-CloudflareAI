@@ -1,4 +1,8 @@
-import type { GoogleOAuthConfig, GoogleTokenResponse } from "../types/google";
+import type {
+  GoogleIdentity,
+  GoogleOAuthConfig,
+  GoogleTokenResponse
+} from "../types/google";
 
 export const PLACEHOLDER_EMAIL = "fishlikescat@gmail.com";
 
@@ -105,4 +109,23 @@ export async function refreshGoogleAccessToken(
   }
 
   return response.json<GoogleTokenResponse>();
+}
+
+/**
+ * Returns Google's stable OpenID subject for the authenticated account.
+ * The subject is safer than an email address and must be resolved server-side.
+ */
+export async function getGoogleIdentity(
+  accessToken: string
+): Promise<GoogleIdentity | null> {
+  const response = await fetch(
+    "https://openidconnect.googleapis.com/v1/userinfo",
+    {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    }
+  );
+  if (!response.ok) return null;
+
+  const identity = await response.json<GoogleIdentity>();
+  return identity.sub?.trim() ? identity : null;
 }

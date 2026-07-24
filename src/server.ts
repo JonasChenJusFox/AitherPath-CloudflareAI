@@ -7,6 +7,7 @@ import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { handleGoogleRoutes } from "./auth/googleRoutes";
 import { handleWeek3Routes } from "./routes/week3";
 import {
+  getGoogleIdentity,
   getGoogleOAuthConfig,
   refreshGoogleAccessToken
 } from "./auth/googleOAuth";
@@ -703,12 +704,14 @@ If there is no durable profile fact, return an empty memories array.`,
       this.gmailCookieHeader = request.headers.get("Cookie") || "";
       const refreshToken = getGoogleRefreshToken(request);
       if (refreshToken) await this.persistRefreshToken(refreshToken);
-      try {
-        const body = await request.json<{ memoryOwnerName?: string }>();
-        this.memoryOwnerName = body.memoryOwnerName?.trim() || "";
-      } catch {
-        this.memoryOwnerName = "";
-      }
+      const accessToken = getGoogleAccessToken(request);
+      const identity = accessToken
+        ? await getGoogleIdentity(accessToken).catch(() => null)
+        : null;
+      const agentOwner = this.name.split(":")[0] || "anonymous";
+      this.memoryOwnerName = identity?.sub
+        ? `google:${identity.sub}`
+        : `anonymous:${agentOwner}`;
       return successJson({ synced: Boolean(this.gmailCookieHeader) });
     }
 
@@ -1049,14 +1052,6 @@ export default {
       const agent = env.ChatAgent.get(agentId);
       const syncUrl = new URL(request.url);
       syncUrl.pathname = "/internal/auth-sync";
-      let memoryOwnerName = agentName.split(":")[0] || "";
-      try {
-        const body = await request.clone().json<{ memoryOwnerName?: string }>();
-        memoryOwnerName = body.memoryOwnerName?.trim() || memoryOwnerName;
-      } catch {
-        // The agent name contains the local user id as a fallback.
-      }
-
       return agent.fetch(
         new Request(syncUrl.toString(), {
           method: "POST",
@@ -1065,7 +1060,7 @@ export default {
             Cookie: request.headers.get("Cookie") || "",
             "X-WorkingHelper-Internal": "auth-sync"
           },
-          body: JSON.stringify({ memoryOwnerName })
+          body: JSON.stringify({})
         })
       );
     }

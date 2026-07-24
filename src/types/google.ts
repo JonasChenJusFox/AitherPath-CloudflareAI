@@ -28,6 +28,12 @@ export type GmailProfile = {
   historyId?: string;
 };
 
+export type GoogleIdentity = {
+  sub: string;
+  email?: string;
+  name?: string;
+};
+
 export type SendEmailInput = {
   to: string;
   subject: string;

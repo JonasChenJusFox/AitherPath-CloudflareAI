@@ -35,7 +35,7 @@ export function createGmailTools(context: AgentToolContext) {
   return {
     listGmailInbox: tool({
       description:
-        "Read up to 10 recent messages from the connected Gmail inbox when the user asks to check, read, or summarize mail. Do not use it to send, draft, or modify email. This is read-only. If Google is not connected, ask the user to connect Gmail.",
+        "Read up to 10 recent messages from the connected Gmail inbox when the user asks to check, read, or summarize mail. Do not use it to send, draft, or modify email. This is read-only. If Google is not connected, ask the user to log in with Google.",
       inputSchema: listGmailInboxToolSchema,
       execute: async ({ maxResults }) =>
         safeToolExecution(

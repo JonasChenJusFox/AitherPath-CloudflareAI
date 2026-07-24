@@ -36,7 +36,7 @@ export async function getGoogleSession(
       cookies.push(...clearGoogleTokenCookies());
       throw new ApiError(
         "REAUTHORIZATION_REQUIRED",
-        "Google authorization expired. Please connect Google again.",
+        "Google authorization expired. Please log in again.",
         401
       );
     }
@@ -53,7 +53,7 @@ export async function getGoogleSession(
     cookies.push(...clearGoogleTokenCookies());
     throw new ApiError(
       "REAUTHORIZATION_REQUIRED",
-      "Google authorization expired. Please connect Google again.",
+      "Google authorization expired. Please log in again.",
       401
     );
   }

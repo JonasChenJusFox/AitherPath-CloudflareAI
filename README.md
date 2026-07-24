@@ -59,16 +59,18 @@ User
 → final streamed response
 ```
 
-Chat memory is separated by local user and chat session:
+Chat sessions are separated in the browser, while durable profile memory is scoped by a server-resolved identity:
 
 ```text
-Browser local user id
-→ Chat review id
-→ Agent name: local_user_xxx:chat_xxx
-→ Separate Durable Object chat memory
+Google OAuth subject (server-side)
+→ Vectorize namespace: google:<subject>
+→ Durable profile memory shared across that user's chats and devices
+
+Anonymous browser session
+→ Temporary anonymous namespace
 ```
 
-The left sidebar stores up to 30 local chat reviews. Each review title opens its own chat window and memory.
+The left sidebar stores up to 30 local chat reviews. Local storage contains only chat review metadata and interface preferences; it is not trusted as the user's identity or memory owner.
 
 The important part is that job search is no longer only a normal HTTP endpoint. It is now an Agent tool. A user can ask naturally:
 
@@ -241,7 +243,7 @@ https://www.googleapis.com/auth/calendar.events
 https://www.googleapis.com/auth/contacts.readonly
 ```
 
-If you previously connected Gmail, click `Switch Gmail` once and grant the Calendar and Contacts scopes when prompted.
+If you previously connected Google, click `Switch account` once and grant the Calendar and Contacts scopes when prompted.
 
 Implemented routes:
 
