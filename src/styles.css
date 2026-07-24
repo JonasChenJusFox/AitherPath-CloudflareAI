@@ -20,8 +20,8 @@ body,
   overflow: hidden;
   padding: 40px 20px;
   background:
-    radial-gradient(circle at 18% 12%, rgb(255 193 119 / 24%), transparent 34%),
-    radial-gradient(circle at 84% 88%, rgb(133 173 255 / 22%), transparent 36%),
+    radial-gradient(circle at 18% 12%, rgb(147 197 253 / 26%), transparent 34%),
+    radial-gradient(circle at 84% 88%, rgb(191 219 254 / 30%), transparent 36%),
     var(--kumo-color-base, #f8fafc);
 }
 
@@ -38,14 +38,14 @@ body,
 .welcome-glow-one {
   top: -120px;
   left: 12%;
-  background: rgb(255 153 72 / 22%);
+  background: rgb(59 130 246 / 22%);
   animation: welcome-float 8s ease-in-out infinite;
 }
 
 .welcome-glow-two {
   right: 8%;
   bottom: -140px;
-  background: rgb(72 126 255 / 18%);
+  background: rgb(14 165 233 / 18%);
   animation: welcome-float 10s ease-in-out -2s infinite reverse;
 }
 
@@ -75,8 +75,8 @@ body,
   place-items: center;
   border-radius: 16px;
   color: #fff;
-  background: linear-gradient(145deg, #ff8b29, #ffb45c);
-  box-shadow: 0 12px 24px rgb(255 139 41 / 28%);
+  background: linear-gradient(145deg, #2563eb, #60a5fa);
+  box-shadow: 0 12px 24px rgb(37 99 235 / 28%);
 }
 
 .welcome-title {
@@ -112,7 +112,7 @@ body,
   border: 1px solid rgb(15 23 42 / 7%);
   border-radius: 18px;
   background: rgb(248 250 252 / 72%);
-  color: #f27c22;
+  color: #2563eb;
 }
 
 .welcome-feature div {
@@ -160,8 +160,8 @@ body,
 .welcome-primary {
   border: 0;
   color: #fff;
-  background: #171717;
-  box-shadow: 0 10px 20px rgb(15 23 42 / 17%);
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  box-shadow: 0 10px 20px rgb(37 99 235 / 24%);
 }
 
 .welcome-secondary {
@@ -176,7 +176,7 @@ body,
 }
 
 .welcome-primary:hover {
-  box-shadow: 0 14px 26px rgb(15 23 42 / 23%);
+  box-shadow: 0 14px 26px rgb(37 99 235 / 32%);
 }
 
 .welcome-secondary:hover {
