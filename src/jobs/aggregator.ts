@@ -1,6 +1,7 @@
 import { searchJooble } from "./providers/jooble";
 import { searchLinkedInBrowser } from "./providers/linkedinBrowser";
 import { searchLinkedInBrowserRun } from "./providers/linkedinBrowserRun";
+import { ApiError } from "../utils/api";
 import type {
   JobSearchInput,
   JobSource,
@@ -107,7 +108,10 @@ export async function searchAcrossProviders(
       providers.push({
         provider: searches[index].provider,
         status: "error",
-        message: "A job provider request failed."
+        message:
+          result.reason instanceof ApiError
+            ? result.reason.message
+            : "A job provider request failed."
       });
   });
   return { jobs: dedupeAndSort(jobs), providers };
