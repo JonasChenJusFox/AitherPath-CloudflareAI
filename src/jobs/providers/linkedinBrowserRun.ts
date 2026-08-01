@@ -46,6 +46,11 @@ export async function startLinkedInBrowserSession(env: Env) {
   return { sessionId, authenticated: false };
 }
 
+export async function listLinkedInBrowserSessions(env: Env) {
+  const { sessions } = await browserRuntime();
+  return sessions(env.BROWSER);
+}
+
 export async function searchLinkedInBrowserRun(
   env: Env,
   input: JobSearchInput

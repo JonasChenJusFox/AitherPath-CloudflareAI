@@ -53,7 +53,10 @@ import {
 } from "./google/calendar";
 import { searchContacts } from "./google/contacts";
 import { sendGmailMessage } from "./google/gmail";
-import { startLinkedInBrowserSession } from "./jobs/providers/linkedinBrowserRun";
+import {
+  listLinkedInBrowserSessions,
+  startLinkedInBrowserSession
+} from "./jobs/providers/linkedinBrowserRun";
 
 type MemorySaveResult =
   | {
@@ -1070,6 +1073,41 @@ export default {
           new ApiError(
             "JOB_SEARCH_ERROR",
             "Unable to start a Browser Run session.",
+            502
+          ),
+          getRequestId(request)
+        );
+      }
+    }
+
+    if (
+      url.pathname === "/api/linkedin/session/status" &&
+      request.method === "GET"
+    ) {
+      const expectedToken = env.LINKEDIN_BROWSER_API_TOKEN?.trim();
+      if (
+        !expectedToken ||
+        request.headers.get("Authorization") !== `Bearer ${expectedToken}`
+      ) {
+        return errorJson(
+          new ApiError(
+            "AUTHENTICATION_REQUIRED",
+            "LinkedIn browser session authorization is required.",
+            401
+          ),
+          getRequestId(request)
+        );
+      }
+      try {
+        return successJson({
+          configuredSessionId: env.LINKEDIN_BROWSER_SESSION_ID || null,
+          activeSessions: await listLinkedInBrowserSessions(env)
+        });
+      } catch {
+        return errorJson(
+          new ApiError(
+            "JOB_SEARCH_ERROR",
+            "Unable to inspect Browser Run sessions.",
             502
           ),
           getRequestId(request)
