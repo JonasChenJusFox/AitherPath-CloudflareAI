@@ -9,7 +9,8 @@ export const AGENT_TOOL_NAMES = [
   "searchGoogleContacts",
   "listGoogleContacts",
   "saveSessionMemory",
-  "scheduleMeetingWorkflow"
+  "scheduleMeetingWorkflow",
+  "getCurrentWeather"
 ] as const;
 
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
@@ -46,6 +47,9 @@ export function selectActiveTools(message: string): AgentToolName[] {
   }
   if (/\b(remember|save this|save that|keep this|preference)\b/.test(text)) {
     selected.add("saveSessionMemory");
+  }
+  if (/\b(weather|forecast|temperature|rain|snow)\b/.test(text)) {
+    selected.add("getCurrentWeather");
   }
 
   return selected.size > 0 ? [...selected] : [...AGENT_TOOL_NAMES];

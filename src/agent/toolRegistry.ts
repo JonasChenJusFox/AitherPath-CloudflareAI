@@ -5,6 +5,7 @@ import { createGmailTools } from "./tools/gmail";
 import { createJobsTools } from "./tools/jobs";
 import { createMemoryTools } from "./tools/memory";
 import { createWorkflowTools } from "./tools/workflow";
+import { createWeatherTools } from "./tools/weather";
 
 export function createToolRegistry(context: AgentToolContext) {
   return {
@@ -13,7 +14,8 @@ export function createToolRegistry(context: AgentToolContext) {
     ...createCalendarTools(context),
     ...createContactsTools(context),
     ...createMemoryTools(context),
-    ...createWorkflowTools(context)
+    ...createWorkflowTools(context),
+    ...createWeatherTools(context)
   };
 }
 

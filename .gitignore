@@ -80,6 +80,8 @@ web_modules/
 .env.test.local
 .env.production.local
 .env.local
+services/linkedin-browser-service/.data/
+linkedin-profile/
 .local-backup/
 .wrangler/
 
@@ -149,3 +151,4 @@ dist
 .local-backup/
 !.dev.vars.example
 .env.example
+!services/linkedin-browser-service/.env.example

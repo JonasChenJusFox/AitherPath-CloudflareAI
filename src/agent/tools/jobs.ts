@@ -1,8 +1,8 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { searchJobs } from "../../jobSearch";
+import { searchAcrossProviders } from "../../jobSearch";
 import { safeToolExecution } from "../toolErrors";
-import { toolFailure, type AgentToolContext } from "../types";
+import type { AgentToolContext } from "../types";
 
 export const jobSearchToolSchema = z
   .object({
@@ -18,7 +18,23 @@ export const jobSearchToolSchema = z
       .min(2)
       .max(120)
       .optional()
-      .describe("Optional city, region, country, or remote preference.")
+      .describe("Optional city, region, country, or remote preference."),
+    sources: z
+      .array(z.enum(["jooble", "linkedin"]))
+      .min(1)
+      .optional()
+      .describe(
+        "Optional providers. Defaults to Jooble. LinkedIn requires an active user-assisted browser session."
+      ),
+    linkedinSessionId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        "User-created LinkedIn browser session identifier; never a password or OAuth token."
+      )
   })
   .strict();
 
@@ -26,21 +42,22 @@ export function createJobsTools(context: AgentToolContext) {
   return {
     searchJobs: tool({
       description:
-        "Search current Jooble postings for jobs, internships, openings, roles, or companies hiring. Use only for a real job search, not general career advice. Useful keywords are required; location is optional. This reads external data and never creates or changes anything. If no listings are returned, do not fabricate results.",
+        "Search jobs through configured providers. Jooble is the default. Use LinkedIn only after the user explicitly starts a browser-assisted session. Results are read-only; never fabricate listings.",
       inputSchema: jobSearchToolSchema,
-      execute: async ({ keywords, location }) => {
-        const apiKey = context.env.JOOBLE_API_KEY?.trim();
-        if (!apiKey) {
-          return toolFailure(
-            "CONFIGURATION_ERROR",
-            "Job search is not configured. Add JOOBLE_API_KEY as a Cloudflare secret."
-          );
-        }
-
+      execute: async ({ keywords, location, sources, linkedinSessionId }) => {
+        const effectiveSources =
+          sources ||
+          (/\blinkedin\b/i.test(context.latestUserText)
+            ? (["jooble", "linkedin"] as const)
+            : undefined);
         return safeToolExecution(
-          async () => ({
-            jobs: await searchJobs(apiKey, { keywords, location })
-          }),
+          () =>
+            searchAcrossProviders(context.env, {
+              keywords,
+              location,
+              sources: effectiveSources,
+              linkedinSessionId
+            }),
           "Job search is temporarily unavailable. Please try again."
         );
       }

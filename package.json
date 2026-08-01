@@ -13,6 +13,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:local": "CLOUDFLARE_VITE_FORCE_LOCAL=true vite dev",
     "start": "vite dev",
     "build": "node scripts/build-safe.mjs",
     "deploy": "node scripts/deploy-safe.mjs",

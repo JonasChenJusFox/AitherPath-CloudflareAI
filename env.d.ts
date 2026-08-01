@@ -14,6 +14,8 @@ interface __BaseEnv_Env {
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;
 	GOOGLE_REDIRECT_URI: string;
+	LINKEDIN_BROWSER_SEARCH_URL?: string;
+	LINKEDIN_BROWSER_API_TOKEN?: string;
 	ChatAgent: DurableObjectNamespace<import("./src/server").ChatAgent>;
 }
 declare namespace Cloudflare {
