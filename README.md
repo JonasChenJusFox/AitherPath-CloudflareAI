@@ -436,7 +436,7 @@ Available agent tools:
 
 The Week 1 foundation is implemented in TypeScript: the agent selects a typed weather tool, executes it, observes the structured result, and continues the response. `src/week1/weather.ts` contains the provider adapter and `src/agent/tools/weather.ts` exposes it to the Agent tool loop.
 
-Week 2 uses a separate local Playwright browser service instead of LinkedIn OAuth. The user manually signs in to LinkedIn in the opened browser on the first run; the persistent profile is reused on later runs. The Worker never receives a LinkedIn password or browser cookie. Job search continues through Jooble by default, and LinkedIn is queried only when the user explicitly requests the browser-assisted provider.
+Week 2 uses Cloudflare Browser Run with Playwright instead of LinkedIn OAuth. The user manually signs in to LinkedIn through a Browser Run Live Session; the Worker never receives a LinkedIn password or browser cookie. Job search continues through Jooble by default, and LinkedIn is queried only when the user explicitly requests the browser-assisted provider.
 
 ## Durable Meeting Workflow
 
@@ -466,13 +466,11 @@ type JobSummary = {
 };
 ```
 
-Jooble is the default provider. LinkedIn is called only when the user starts a browser-assisted session and supplies a session identifier. The Worker calls the separately hosted Playwright service through `LINKEDIN_BROWSER_SEARCH_URL`; it never receives a LinkedIn password or OAuth token. The aggregator runs available providers in parallel, removes duplicates, and sorts the combined results.
+Jooble is the default provider. LinkedIn is called only when the user starts a Cloudflare Browser Run session and supplies a session identifier. The Worker uses the `BROWSER` binding and never receives a LinkedIn password or OAuth token. The aggregator runs available providers in parallel, removes duplicates, and sorts the combined results.
 
-### Local LinkedIn browser service
+### Cloudflare Browser Run
 
-The Week 2 browser implementation lives in `services/linkedin-browser-service/`. It is a separate Node.js + Playwright process with a persistent headed Chromium profile. The first run pauses for manual LinkedIn login, 2FA, or CAPTCHA; later runs reuse `.data/linkedin-profile/`. See its [README](services/linkedin-browser-service/README.md) for setup, CLI, HTTP requests, token generation, and Worker integration. Browser profiles, cookies, and service tokens are ignored by Git.
-
-For local end-to-end testing against the local Playwright service, start the Worker with `npm run dev:local`; the normal `npm run dev` may use remote bindings, which cannot reach `localhost:3001`.
+The browser implementation uses the Cloudflare `BROWSER` binding and `@cloudflare/playwright`. Call `POST /api/linkedin/session/start` with the configured browser-service token to create a session, complete LinkedIn login in Browser Run Live Sessions, then configure `LINKEDIN_BROWSER_SESSION_ID` for the Worker. Browser Run sessions are time-limited and should use a test LinkedIn account.
 
 ### `wrangler.jsonc`
 

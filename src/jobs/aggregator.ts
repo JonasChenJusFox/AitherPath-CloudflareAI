@@ -1,5 +1,6 @@
 import { searchJooble } from "./providers/jooble";
 import { searchLinkedInBrowser } from "./providers/linkedinBrowser";
+import { searchLinkedInBrowserRun } from "./providers/linkedinBrowserRun";
 import type {
   JobSearchInput,
   JobSource,
@@ -65,23 +66,35 @@ export async function searchAcrossProviders(
   }
 
   if (requested.includes("linkedin")) {
-    const endpoint = env.LINKEDIN_BROWSER_SEARCH_URL?.trim();
-    const token = env.LINKEDIN_BROWSER_API_TOKEN?.trim();
-    if (!endpoint || !token)
-      providers.push({
-        provider: "linkedin",
-        status: "skipped",
-        message:
-          "Start a LinkedIn browser session and configure the browser service first."
-      });
-    else
+    if (env.BROWSER) {
       searches.push({
         provider: "linkedin",
-        promise: searchLinkedInBrowser(endpoint, token, input).then((jobs) => {
+        promise: searchLinkedInBrowserRun(env, input).then((jobs) => {
           providers.push({ provider: "linkedin", status: "ok" });
           return jobs;
         })
       });
+    } else {
+      const endpoint = env.LINKEDIN_BROWSER_SEARCH_URL?.trim();
+      const token = env.LINKEDIN_BROWSER_API_TOKEN?.trim();
+      if (!endpoint || !token)
+        providers.push({
+          provider: "linkedin",
+          status: "skipped",
+          message:
+            "Start a LinkedIn browser session and configure the browser service first."
+        });
+      else
+        searches.push({
+          provider: "linkedin",
+          promise: searchLinkedInBrowser(endpoint, token, input).then(
+            (jobs) => {
+              providers.push({ provider: "linkedin", status: "ok" });
+              return jobs;
+            }
+          )
+        });
+    }
   }
 
   const results = await Promise.allSettled(

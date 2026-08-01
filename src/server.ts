@@ -53,6 +53,7 @@ import {
 } from "./google/calendar";
 import { searchContacts } from "./google/contacts";
 import { sendGmailMessage } from "./google/gmail";
+import { startLinkedInBrowserSession } from "./jobs/providers/linkedinBrowserRun";
 
 type MemorySaveResult =
   | {
@@ -1043,6 +1044,38 @@ export default {
     if (canonicalRedirect) return canonicalRedirect;
 
     const url = new URL(request.url);
+
+    if (
+      url.pathname === "/api/linkedin/session/start" &&
+      request.method === "POST"
+    ) {
+      const expectedToken = env.LINKEDIN_BROWSER_API_TOKEN?.trim();
+      if (
+        !expectedToken ||
+        request.headers.get("Authorization") !== `Bearer ${expectedToken}`
+      ) {
+        return errorJson(
+          new ApiError(
+            "AUTHENTICATION_REQUIRED",
+            "LinkedIn browser session authorization is required.",
+            401
+          ),
+          getRequestId(request)
+        );
+      }
+      try {
+        return successJson(await startLinkedInBrowserSession(env));
+      } catch {
+        return errorJson(
+          new ApiError(
+            "JOB_SEARCH_ERROR",
+            "Unable to start a Browser Run session.",
+            502
+          ),
+          getRequestId(request)
+        );
+      }
+    }
 
     if (url.pathname === "/api/agent/auth-sync" && request.method === "POST") {
       const agentName = url.searchParams.get("name");
