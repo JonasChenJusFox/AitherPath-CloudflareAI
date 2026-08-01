@@ -13,10 +13,10 @@ type BrowserTarget = {
 function browserApiConfig(env: Env) {
   const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
   const token = env.BROWSER_RUN_API_TOKEN?.trim();
-  if (!accountId || !token) {
+  if (!accountId || !/^[a-f0-9]{32}$/i.test(accountId) || !token) {
     throw new ApiError(
       "JOB_SEARCH_ERROR",
-      "Browser Run login is not configured. Add CLOUDFLARE_ACCOUNT_ID and BROWSER_RUN_API_TOKEN.",
+      "Browser Run login is not configured. CLOUDFLARE_ACCOUNT_ID must be the 32-character Cloudflare account ID, and BROWSER_RUN_API_TOKEN must have Browser Rendering access.",
       503
     );
   }
