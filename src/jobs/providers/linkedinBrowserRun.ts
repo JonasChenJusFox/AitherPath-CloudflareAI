@@ -53,9 +53,13 @@ async function browserApi<T>(
     errors?: Array<{ message?: string }>;
   } | null;
   if (!response.ok || !payload?.success) {
+    const detail = payload?.errors
+      ?.map((error) => error.message)
+      .filter(Boolean)
+      .join("; ");
     throw new ApiError(
       "JOB_SEARCH_ERROR",
-      payload?.errors?.[0]?.message || "Browser Run API request failed.",
+      detail || `Browser Run API request failed (HTTP ${response.status}).`,
       response.status >= 400 && response.status < 500 ? response.status : 502
     );
   }
