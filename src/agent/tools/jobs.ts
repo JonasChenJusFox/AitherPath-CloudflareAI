@@ -33,7 +33,7 @@ export const jobSearchToolSchema = z
       .max(200)
       .optional()
       .describe(
-        "User-created LinkedIn browser session identifier; never a password or OAuth token."
+        "Optional override for a LinkedIn Browser Run session. The server normally supplies this; never ask the user to provide it."
       )
   })
   .strict();
@@ -42,7 +42,7 @@ export function createJobsTools(context: AgentToolContext) {
   return {
     searchJobs: tool({
       description:
-        "Search jobs through configured providers. Jooble is the default. Use LinkedIn only after the user explicitly starts a browser-assisted session. Results are read-only; never fabricate listings.",
+        "Search jobs through configured providers. Jooble is the default. Use LinkedIn only after the server-configured Browser Run session has been manually logged in. Results are read-only; never fabricate listings.",
       inputSchema: jobSearchToolSchema,
       execute: async ({ keywords, location, sources, linkedinSessionId }) => {
         const effectiveSources =
