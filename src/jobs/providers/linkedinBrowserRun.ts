@@ -5,6 +5,56 @@ async function browserRuntime() {
   return import("@cloudflare/playwright");
 }
 
+type BrowserTarget = {
+  url?: string;
+  devtoolsFrontendUrl?: string;
+};
+
+function browserApiConfig(env: Env) {
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
+  const token = env.BROWSER_RUN_API_TOKEN?.trim();
+  if (!accountId || !token) {
+    throw new ApiError(
+      "JOB_SEARCH_ERROR",
+      "Browser Run login is not configured. Add CLOUDFLARE_ACCOUNT_ID and BROWSER_RUN_API_TOKEN.",
+      503
+    );
+  }
+  return {
+    base: `https://api.cloudflare.com/client/v4/accounts/${accountId}/browser-rendering/devtools`,
+    token
+  };
+}
+
+async function browserApi<T>(
+  env: Env,
+  path: string,
+  init: RequestInit = {}
+): Promise<T> {
+  const { base, token } = browserApiConfig(env);
+  const response = await fetch(`${base}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(init.headers || {})
+    }
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    success?: boolean;
+    result?: T;
+    errors?: Array<{ message?: string }>;
+  } | null;
+  if (!response.ok || !payload?.success) {
+    throw new ApiError(
+      "JOB_SEARCH_ERROR",
+      payload?.errors?.[0]?.message || "Browser Run API request failed.",
+      response.status >= 400 && response.status < 500 ? response.status : 502
+    );
+  }
+  return payload.result as T;
+}
+
 function clean(value: string | null | undefined) {
   return (value || "").replace(/\s+/g, " ").trim();
 }
@@ -41,9 +91,48 @@ function normalizeJobs(
 }
 
 export async function startLinkedInBrowserSession(env: Env) {
-  const { acquire } = await browserRuntime();
-  const { sessionId } = await acquire(env.BROWSER, { keep_alive: 600_000 });
-  return { sessionId, authenticated: false };
+  const result = await browserApi<{
+    sessionId: string;
+    targets?: BrowserTarget[];
+  }>(
+    env,
+    "/browser?keep_alive=600000&targets=true&liveViewUrlExpiresInMs=3600000",
+    {
+      method: "POST"
+    }
+  );
+  const target =
+    result.targets?.find((item) => item.devtoolsFrontendUrl) ||
+    result.targets?.[0];
+  return {
+    sessionId: result.sessionId,
+    authenticated: Boolean(target?.url && authenticatedUrl(target.url)),
+    liveViewUrl: target?.devtoolsFrontendUrl || null
+  };
+}
+
+function authenticatedUrl(url: string) {
+  return (
+    /linkedin\.com\/(feed|jobs|mynetwork|messaging|in)/i.test(url) &&
+    !/login|checkpoint|authwall/i.test(url)
+  );
+}
+
+export async function getLinkedInBrowserSessionStatus(
+  env: Env,
+  sessionId: string
+) {
+  const targets = await browserApi<BrowserTarget[]>(
+    env,
+    `/browser/${encodeURIComponent(sessionId)}/json/list?liveViewUrlExpiresInMs=3600000`
+  );
+  const target = targets.find((item) => item.devtoolsFrontendUrl) || targets[0];
+  return {
+    sessionId,
+    authenticated: Boolean(target?.url && authenticatedUrl(target.url)),
+    url: target?.url || null,
+    liveViewUrl: target?.devtoolsFrontendUrl || null
+  };
 }
 
 export async function listLinkedInBrowserSessions(env: Env) {

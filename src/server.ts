@@ -54,6 +54,7 @@ import {
 import { searchContacts } from "./google/contacts";
 import { sendGmailMessage } from "./google/gmail";
 import {
+  getLinkedInBrowserSessionStatus,
   listLinkedInBrowserSessions,
   startLinkedInBrowserSession
 } from "./jobs/providers/linkedinBrowserRun";
@@ -203,6 +204,32 @@ export class ChatAgent extends AIChatAgent<Env> {
         updated_at INTEGER NOT NULL
       )
     `;
+
+    this.sql`
+      CREATE TABLE IF NOT EXISTS linkedin_browser_session (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `;
+  }
+
+  private getLinkedInSessionId() {
+    this.ensureWeek3Tables();
+    return (
+      this.sql<{ session_id: string }>`
+      SELECT session_id FROM linkedin_browser_session WHERE id = ${"default"} LIMIT 1
+    `[0]?.session_id || null
+    );
+  }
+
+  private saveLinkedInSessionId(sessionId: string) {
+    this.ensureWeek3Tables();
+    this.sql`
+      INSERT OR REPLACE INTO linkedin_browser_session (id, session_id, updated_at)
+      VALUES (${"default"}, ${sessionId}, ${Date.now()})
+    `;
+    return sessionId;
   }
 
   private pendingActionRepository(): PendingActionRepository {
@@ -724,6 +751,29 @@ If there is no durable profile fact, return an empty memories array.`,
       return successJson({ synced: Boolean(this.gmailCookieHeader) });
     }
 
+    if (url.pathname === "/internal/linkedin/session") {
+      if (request.headers.get("X-WorkingHelper-Internal") !== "linkedin") {
+        return errorJson(
+          new ApiError("AUTHENTICATION_REQUIRED", "Internal route only.", 401),
+          requestId
+        );
+      }
+      if (request.method === "GET")
+        return successJson({ sessionId: this.getLinkedInSessionId() });
+      if (request.method === "PUT") {
+        const body = (await request.json()) as { sessionId?: string };
+        if (!body.sessionId?.trim()) {
+          return errorJson(
+            new ApiError("VALIDATION_ERROR", "Session ID is required.", 400),
+            requestId
+          );
+        }
+        return successJson({
+          sessionId: this.saveLinkedInSessionId(body.sessionId.trim())
+        });
+      }
+    }
+
     if (url.pathname.startsWith("/internal/week3/")) {
       if (request.headers.get("X-WorkingHelper-Internal") !== "week3") {
         return errorJson(
@@ -868,6 +918,21 @@ If there is no durable profile fact, return an empty memories array.`,
     const tools = createToolRegistry({
       env: this.env,
       latestUserText,
+      getLinkedInSessionId: async () => {
+        const owner = this.name.split(":")[0] || "anonymous";
+        const agent = this.env.ChatAgent.get(
+          this.env.ChatAgent.idFromName(`linkedin:${owner}`)
+        );
+        const response = await agent.fetch(
+          new Request("https://workinghelper.com/internal/linkedin/session", {
+            headers: { "X-WorkingHelper-Internal": "linkedin" }
+          })
+        );
+        const payload = await response.json<{
+          data?: { sessionId?: string | null };
+        }>();
+        return payload.data?.sessionId || null;
+      },
       getGoogleAccessToken: () => this.getGmailAccessToken(),
       saveMemory: (key, value) => this.saveSharedMemoryValue(key, value),
       startMeetingWorkflow: (params) => this.startMeetingWorkflow(params),
@@ -1047,6 +1112,95 @@ export default {
     if (canonicalRedirect) return canonicalRedirect;
 
     const url = new URL(request.url);
+
+    // User-facing LinkedIn connection flow. The browser session is keyed by
+    // the signed-in/anonymous app user, so users never need to copy a session
+    // ID from a terminal or the Cloudflare dashboard.
+    if (
+      url.pathname === "/api/linkedin/connect/start" &&
+      request.method === "POST"
+    ) {
+      const agentName = url.searchParams.get("name")?.trim();
+      if (!agentName) {
+        return errorJson(
+          new ApiError("VALIDATION_ERROR", "User name is required.", 400),
+          getRequestId(request)
+        );
+      }
+      try {
+        const session = await startLinkedInBrowserSession(env);
+        const owner = agentName.split(":")[0] || agentName;
+        const agent = env.ChatAgent.get(
+          env.ChatAgent.idFromName(`linkedin:${owner}`)
+        );
+        await agent.fetch(
+          new Request("https://workinghelper.com/internal/linkedin/session", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "X-WorkingHelper-Internal": "linkedin"
+            },
+            body: JSON.stringify({ sessionId: session.sessionId })
+          })
+        );
+        return successJson(session);
+      } catch (error) {
+        return errorJson(
+          error instanceof ApiError
+            ? error
+            : new ApiError(
+                "JOB_SEARCH_ERROR",
+                "Unable to start the LinkedIn login session.",
+                502
+              ),
+          getRequestId(request)
+        );
+      }
+    }
+
+    if (
+      url.pathname === "/api/linkedin/connect/status" &&
+      request.method === "GET"
+    ) {
+      const agentName = url.searchParams.get("name")?.trim();
+      if (!agentName) {
+        return errorJson(
+          new ApiError("VALIDATION_ERROR", "User name is required.", 400),
+          getRequestId(request)
+        );
+      }
+      try {
+        const owner = agentName.split(":")[0] || agentName;
+        const agent = env.ChatAgent.get(
+          env.ChatAgent.idFromName(`linkedin:${owner}`)
+        );
+        const response = await agent.fetch(
+          new Request("https://workinghelper.com/internal/linkedin/session", {
+            headers: { "X-WorkingHelper-Internal": "linkedin" }
+          })
+        );
+        const payload = await response.json<{
+          data?: { sessionId?: string | null };
+        }>();
+        const sessionId = payload.data?.sessionId || null;
+        if (!sessionId)
+          return successJson({ sessionId: null, authenticated: false });
+        return successJson(
+          await getLinkedInBrowserSessionStatus(env, sessionId)
+        );
+      } catch (error) {
+        return errorJson(
+          error instanceof ApiError
+            ? error
+            : new ApiError(
+                "JOB_SEARCH_ERROR",
+                "Unable to inspect the LinkedIn login session.",
+                502
+              ),
+          getRequestId(request)
+        );
+      }
+    }
 
     if (
       url.pathname === "/api/linkedin/session/start" &&

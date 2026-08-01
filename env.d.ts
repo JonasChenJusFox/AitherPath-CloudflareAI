@@ -17,6 +17,8 @@ interface __BaseEnv_Env {
 	LINKEDIN_BROWSER_SEARCH_URL?: string;
 	LINKEDIN_BROWSER_API_TOKEN?: string;
 	LINKEDIN_BROWSER_SESSION_ID?: string;
+	CLOUDFLARE_ACCOUNT_ID?: string;
+	BROWSER_RUN_API_TOKEN?: string;
 	ChatAgent: DurableObjectNamespace<import("./src/server").ChatAgent>;
 	SCHEDULE_MEETING_WORKFLOW: Workflow<Parameters<import("./src/server").ScheduleMeetingWorkflow['run']>[0]['payload']>;
 }

@@ -59,6 +59,12 @@ type GmailStatus = {
   placeholderEmail?: string;
 };
 
+type LinkedInStatus = {
+  authenticated: boolean;
+  connecting: boolean;
+  error?: string;
+};
+
 interface Attachment {
   id: string;
   file: File;
@@ -953,6 +959,8 @@ type SidebarContentProps = {
   cancelEditingReview: () => void;
   deleteReview: (reviewId: string) => void;
   disconnectGmail: () => void;
+  linkedInStatus: LinkedInStatus;
+  connectLinkedIn: () => void;
 };
 
 function SidebarContent({
@@ -970,7 +978,9 @@ function SidebarContent({
   saveEditingReview,
   cancelEditingReview,
   deleteReview,
-  disconnectGmail
+  disconnectGmail,
+  linkedInStatus,
+  connectLinkedIn
 }: SidebarContentProps) {
   return (
     <>
@@ -1079,6 +1089,25 @@ function SidebarContent({
       <div className="p-3 border-t border-kumo-line">
         <Button
           variant="secondary"
+          onClick={connectLinkedIn}
+          disabled={linkedInStatus.connecting}
+          className="w-full justify-center mb-3"
+        >
+          {linkedInStatus.connecting
+            ? "Opening LinkedIn..."
+            : linkedInStatus.authenticated
+              ? "LinkedIn connected"
+              : "Connect LinkedIn"}
+        </Button>
+        {linkedInStatus.error && (
+          <div className="mb-3">
+            <Text size="xs" variant="secondary">
+              {linkedInStatus.error}
+            </Text>
+          </div>
+        )}
+        <Button
+          variant="secondary"
           onClick={() => {
             window.location.href = "/auth/google";
           }}
@@ -1117,10 +1146,78 @@ export default function App() {
     configured: false,
     connected: false
   });
+  const [linkedInStatus, setLinkedInStatus] = useState<LinkedInStatus>({
+    authenticated: false,
+    connecting: false
+  });
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  const linkedInStatusUrl = `/api/linkedin/connect/status?name=${encodeURIComponent(userId)}`;
+
+  const refreshLinkedInStatus = useCallback(async () => {
+    try {
+      const response = await fetch(linkedInStatusUrl);
+      const payload = (await response.json()) as {
+        data?: { authenticated?: boolean };
+      };
+      const authenticated = Boolean(payload.data?.authenticated);
+      setLinkedInStatus((current) => ({
+        ...current,
+        authenticated,
+        error: undefined
+      }));
+      return authenticated;
+    } catch {
+      return false;
+    }
+  }, [linkedInStatusUrl]);
+
+  const connectLinkedIn = useCallback(async () => {
+    setLinkedInStatus({ authenticated: false, connecting: true });
+    try {
+      const response = await fetch(
+        `/api/linkedin/connect/start?name=${encodeURIComponent(userId)}`,
+        { method: "POST" }
+      );
+      const payload = (await response.json()) as {
+        data?: { liveViewUrl?: string | null };
+        error?: { message?: string };
+      };
+      if (!response.ok || !payload.data?.liveViewUrl) {
+        throw new Error(
+          payload.error?.message ||
+            "LinkedIn login is not configured on this deployment."
+        );
+      }
+      window.open(
+        payload.data.liveViewUrl,
+        "aitherpath-linkedin-login",
+        "noopener,noreferrer"
+      );
+      const startedAt = Date.now();
+      const poll = window.setInterval(async () => {
+        const authenticated = await refreshLinkedInStatus();
+        if (authenticated || Date.now() - startedAt > 5 * 60_000) {
+          window.clearInterval(poll);
+          setLinkedInStatus((current) => ({ ...current, connecting: false }));
+        }
+      }, 3000);
+    } catch (error) {
+      setLinkedInStatus({
+        authenticated: false,
+        connecting: false,
+        error:
+          error instanceof Error ? error.message : "Unable to connect LinkedIn."
+      });
+    }
+  }, [refreshLinkedInStatus, userId]);
+
+  useEffect(() => {
+    if (entryMode === "chat") void refreshLinkedInStatus();
+  }, [entryMode, refreshLinkedInStatus]);
 
   useEffect(() => {
     saveChatReviews(userId, reviews);
@@ -1310,6 +1407,8 @@ export default function App() {
                 cancelEditingReview={cancelEditingReview}
                 deleteReview={deleteReview}
                 disconnectGmail={disconnectGmail}
+                linkedInStatus={linkedInStatus}
+                connectLinkedIn={connectLinkedIn}
               />
             </aside>
           </div>
@@ -1332,6 +1431,8 @@ export default function App() {
             cancelEditingReview={cancelEditingReview}
             deleteReview={deleteReview}
             disconnectGmail={disconnectGmail}
+            linkedInStatus={linkedInStatus}
+            connectLinkedIn={connectLinkedIn}
           />
         </aside>
 

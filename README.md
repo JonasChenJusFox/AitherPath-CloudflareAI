@@ -466,11 +466,11 @@ type JobSummary = {
 };
 ```
 
-Jooble is the default provider. LinkedIn is called only when the user starts a Cloudflare Browser Run session and supplies a session identifier. The Worker uses the `BROWSER` binding and never receives a LinkedIn password or OAuth token. The aggregator runs available providers in parallel, removes duplicates, and sorts the combined results.
+Jooble is the default provider. LinkedIn is called when the user clicks **Connect LinkedIn** in the app. The Worker creates a per-user Cloudflare Browser Run session, opens a short-lived Live View URL for manual login, and stores the resulting session ID in the user's Durable Object. Future searches reuse that session automatically; users never copy a session ID or use a terminal. The Worker never receives a LinkedIn password or OAuth token. Browser Run sessions are time-limited, so the UI asks the user to reconnect when a session expires. Use a test LinkedIn account and follow LinkedIn's terms.
 
 ### Cloudflare Browser Run
 
-The browser implementation uses the Cloudflare `BROWSER` binding and `@cloudflare/playwright`. Call `POST /api/linkedin/session/start` with the configured browser-service token to create a session, complete LinkedIn login in Browser Run Live Sessions, then configure `LINKEDIN_BROWSER_SESSION_ID` for the Worker. Browser Run sessions are time-limited and should use a test LinkedIn account.
+The browser implementation uses the Cloudflare `BROWSER` binding and `@cloudflare/playwright`. The user-facing connect flow calls `POST /api/linkedin/connect/start`, which uses the Cloudflare Browser Run API to create a session with a Live View URL. Set `CLOUDFLARE_ACCOUNT_ID` and `BROWSER_RUN_API_TOKEN` as Worker secrets; the token needs Browser Rendering Write/Edit access. The browser session itself is kept per user in the ChatAgent SQLite storage and is checked by `/api/linkedin/connect/status`. Browser Run sessions are time-limited and should use a test LinkedIn account.
 
 ### `wrangler.jsonc`
 

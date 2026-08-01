@@ -50,13 +50,18 @@ export function createJobsTools(context: AgentToolContext) {
           (/\blinkedin\b/i.test(context.latestUserText)
             ? (["jooble", "linkedin"] as const)
             : undefined);
+        const activeLinkedInSessionId =
+          linkedinSessionId ||
+          (effectiveSources?.includes("linkedin")
+            ? await context.getLinkedInSessionId?.()
+            : undefined);
         return safeToolExecution(
           () =>
             searchAcrossProviders(context.env, {
               keywords,
               location,
               sources: effectiveSources,
-              linkedinSessionId
+              linkedinSessionId: activeLinkedInSessionId || undefined
             }),
           "Job search is temporarily unavailable. Please try again."
         );

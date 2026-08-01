@@ -34,6 +34,7 @@ export type MemoryEntry = {
 export type AgentToolContext = {
   env: Env;
   latestUserText: string;
+  getLinkedInSessionId?: () => Promise<string | null>;
   getGoogleAccessToken: () => Promise<string | null>;
   saveMemory: (key: string, value: string) => Promise<MemoryEntry>;
   startMeetingWorkflow?: (
