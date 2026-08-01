@@ -31,6 +31,10 @@ export async function safeToolExecution<T>(
       if (error.code === "VALIDATION_ERROR") {
         return toolFailure("VALIDATION_ERROR", error.message);
       }
+
+      if (error.code === "JOB_SEARCH_ERROR") {
+        return toolFailure("PROVIDER_ERROR", error.message, true);
+      }
     }
 
     return toolFailure("PROVIDER_ERROR", fallbackMessage, true);
