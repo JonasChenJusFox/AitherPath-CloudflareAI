@@ -96,7 +96,7 @@ export async function startLinkedInBrowserSession(env: Env) {
     targets?: BrowserTarget[];
   }>(
     env,
-    "/browser?keep_alive=600000&targets=true&liveViewUrlExpiresInMs=3600000",
+    "/browser?keep_alive=1200000&targets=true&liveViewUrlExpiresInMs=3600000",
     {
       method: "POST"
     }
