@@ -41,16 +41,9 @@ function normalizeJobs(
 }
 
 export async function startLinkedInBrowserSession(env: Env) {
-  const { launch } = await browserRuntime();
-  const browser = await launch(env.BROWSER, { keep_alive: 600_000 });
-  const page = browser.contexts()[0]?.pages()[0] || (await browser.newPage());
-  await page
-    .goto("https://www.linkedin.com/feed/", {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000
-    })
-    .catch(() => undefined);
-  return { sessionId: browser.sessionId(), authenticated: authenticated(page) };
+  const { acquire } = await browserRuntime();
+  const { sessionId } = await acquire(env.BROWSER, { keep_alive: 600_000 });
+  return { sessionId, authenticated: false };
 }
 
 export async function searchLinkedInBrowserRun(
