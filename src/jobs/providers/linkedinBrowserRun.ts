@@ -113,9 +113,19 @@ export async function startLinkedInBrowserSession(env: Env) {
       method: "POST"
     }
   );
-  const target =
+  let target =
     result.targets?.find((item) => item.devtoolsFrontendUrl) ||
     result.targets?.[0];
+  try {
+    const loginTarget = await browserApi<BrowserTarget>(
+      env,
+      `/browser/${encodeURIComponent(result.sessionId)}/json/new?url=${encodeURIComponent("https://www.linkedin.com/login")}&liveViewUrlExpiresInMs=3600000`,
+      { method: "PUT" }
+    );
+    target = loginTarget || target;
+  } catch {
+    // Fall back to the initial tab if target creation is unavailable.
+  }
   return {
     sessionId: result.sessionId,
     authenticated: Boolean(target?.url && authenticatedUrl(target.url)),
@@ -138,7 +148,13 @@ export async function getLinkedInBrowserSessionStatus(
     env,
     `/browser/${encodeURIComponent(sessionId)}/json/list?liveViewUrlExpiresInMs=3600000`
   );
-  const target = targets.find((item) => item.devtoolsFrontendUrl) || targets[0];
+  const target =
+    targets.find(
+      (item) =>
+        item.url && !/^about:blank$/i.test(item.url) && item.devtoolsFrontendUrl
+    ) ||
+    targets.find((item) => item.devtoolsFrontendUrl) ||
+    targets[0];
   return {
     sessionId,
     authenticated: Boolean(target?.url && authenticatedUrl(target.url)),
@@ -167,7 +183,12 @@ export async function searchLinkedInBrowserRun(
 
   const { connect } = await browserRuntime();
   const browser = await connect(env.BROWSER, sessionId);
-  const page = browser.contexts()[0]?.pages()[0] || (await browser.newPage());
+  const pages = browser.contexts()[0]?.pages() || [];
+  const page =
+    pages.find((candidate) => /linkedin\.com/i.test(candidate.url())) ||
+    pages.find((candidate) => !/^about:blank$/i.test(candidate.url())) ||
+    pages[0] ||
+    (await browser.newPage());
   if (!authenticated(page)) {
     await page
       .goto("https://www.linkedin.com/feed/", {
