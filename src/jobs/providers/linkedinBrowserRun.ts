@@ -52,7 +52,8 @@ async function browserApi<T>(
     result?: T;
     errors?: Array<{ message?: string }>;
   } | null;
-  if (!response.ok || !payload?.success) {
+  const hasEnvelope = Boolean(payload && "success" in payload);
+  if (!response.ok || (hasEnvelope && !payload?.success)) {
     const detail = payload?.errors
       ?.map((error) => error.message)
       .filter(Boolean)
@@ -63,7 +64,7 @@ async function browserApi<T>(
       response.status >= 400 && response.status < 500 ? response.status : 502
     );
   }
-  return payload.result as T;
+  return (payload?.result ?? payload) as T;
 }
 
 function clean(value: string | null | undefined) {
