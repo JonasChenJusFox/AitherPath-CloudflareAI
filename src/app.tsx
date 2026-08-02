@@ -1219,19 +1219,29 @@ export default function App() {
       const startedAt = Date.now();
       const poll = window.setInterval(async () => {
         const authenticated = await refreshLinkedInStatus();
+        const popupClosed = Boolean(liveViewWindow?.closed);
+        const timedOut = Date.now() - startedAt > 90_000;
         if (
           authenticated === true ||
           authenticated === null ||
-          Date.now() - startedAt > 5 * 60_000
+          popupClosed ||
+          timedOut
         ) {
           window.clearInterval(poll);
-          if (authenticated === true) {
+          if (authenticated === true || timedOut) {
             if (liveViewWindow && !liveViewWindow.closed)
               liveViewWindow.close();
-            // Fall back to the named popup if the browser returned no handle.
-            window.open("", "aitherpath-linkedin-login")?.close();
+            if (authenticated === true && !liveViewWindow)
+              window.open("", "aitherpath-linkedin-login")?.close();
           }
-          setLinkedInStatus((current) => ({ ...current, connecting: false }));
+          setLinkedInStatus((current) => ({
+            ...current,
+            connecting: false,
+            error:
+              timedOut && authenticated !== true
+                ? "LinkedIn login was not detected. Please reconnect and try again."
+                : current.error
+          }));
         }
       }, 3000);
     } catch (error) {
