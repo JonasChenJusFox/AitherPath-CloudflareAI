@@ -111,7 +111,9 @@ export async function searchAcrossProviders(
         message:
           result.reason instanceof ApiError
             ? result.reason.message
-            : "A job provider request failed."
+            : result.reason instanceof Error
+              ? result.reason.message
+              : "A job provider request failed."
       });
   });
   return { jobs: dedupeAndSort(jobs), providers };
