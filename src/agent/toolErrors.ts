@@ -2,6 +2,23 @@ import { ApiError } from "../utils/api";
 import { PendingActionError } from "./pendingActions";
 import { toolFailure, type ToolResult } from "./types";
 
+function readableError(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const message = record.message ?? record.error ?? record.detail;
+    if (typeof message === "string" && message.trim()) return message;
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+      // Ignore non-serializable provider errors.
+    }
+  }
+  return fallback;
+}
+
 export async function safeToolExecution<T>(
   operation: () => Promise<T>,
   fallbackMessage: string
@@ -37,6 +54,10 @@ export async function safeToolExecution<T>(
       }
     }
 
-    return toolFailure("PROVIDER_ERROR", fallbackMessage, true);
+    return toolFailure(
+      "PROVIDER_ERROR",
+      readableError(error, fallbackMessage),
+      true
+    );
   }
 }

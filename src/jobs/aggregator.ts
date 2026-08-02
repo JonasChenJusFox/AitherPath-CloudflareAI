@@ -14,6 +14,25 @@ export type AggregatedJobSearch = {
   providers: ProviderStatus[];
 };
 
+function providerErrorMessage(error: unknown) {
+  if (error instanceof ApiError && error.message) return error.message;
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    for (const value of [record.message, record.error, record.detail]) {
+      if (typeof value === "string" && value.trim()) return value;
+    }
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+      // Ignore non-serializable provider errors.
+    }
+  }
+  return "A job provider request failed.";
+}
+
 function normalize(value: string) {
   return value
     .toLowerCase()
@@ -108,12 +127,7 @@ export async function searchAcrossProviders(
       providers.push({
         provider: searches[index].provider,
         status: "error",
-        message:
-          result.reason instanceof ApiError
-            ? result.reason.message
-            : result.reason instanceof Error
-              ? result.reason.message
-              : "A job provider request failed."
+        message: providerErrorMessage(result.reason)
       });
   });
   return { jobs: dedupeAndSort(jobs), providers };
