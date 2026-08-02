@@ -184,50 +184,56 @@ export async function searchLinkedInBrowserRun(
 
   const { connect } = await browserRuntime();
   const browser = await connect(env.BROWSER, sessionId);
-  // Keep the Live View tab available for the user and search in a fresh tab.
-  // This avoids racing the Live View CDP connection while preserving its cookies.
-  const context = browser.contexts()[0] || (await browser.newContext());
-  const page = await context.newPage();
-  await page
-    .goto("https://www.linkedin.com/feed/", {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000
-    })
-    .catch(() => undefined);
-  if (!authenticated(page)) {
-    throw new ApiError(
-      "JOB_SEARCH_ERROR",
-      "Complete LinkedIn login in the Browser Run Live Session, then retry.",
-      409
-    );
-  }
-
-  const url = new URL("https://www.linkedin.com/jobs/search/");
-  url.searchParams.set("keywords", input.keywords);
-  if (input.location) url.searchParams.set("location", input.location);
-  await page.goto(url.toString(), {
-    waitUntil: "domcontentloaded",
-    timeout: 45_000
-  });
-  await page
-    .locator('a[href*="/jobs/view/"]')
-    .first()
-    .waitFor({
-      state: "visible",
-      timeout: 20_000
-    })
-    .catch(() => undefined);
-  const raw = await page
-    .locator('a[href*="/jobs/view/"]')
-    .evaluateAll((anchors) =>
-      anchors.map((anchor) => {
-        const card = anchor.closest("li") || anchor.parentElement;
-        return {
-          title: anchor.textContent || "",
-          location: card?.textContent || "",
-          link: (anchor as HTMLAnchorElement).href
-        };
+  try {
+    // Keep the Live View tab available for the user and search in a fresh tab.
+    // This avoids racing the Live View CDP connection while preserving cookies.
+    const context = browser.contexts()[0] || (await browser.newContext());
+    const page = await context.newPage();
+    await page
+      .goto("https://www.linkedin.com/feed/", {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000
       })
-    );
-  return normalizeJobs(raw);
+      .catch(() => undefined);
+    if (!authenticated(page)) {
+      throw new ApiError(
+        "JOB_SEARCH_ERROR",
+        "Complete LinkedIn login in the Browser Run Live Session, then retry.",
+        409
+      );
+    }
+
+    const url = new URL("https://www.linkedin.com/jobs/search/");
+    url.searchParams.set("keywords", input.keywords);
+    if (input.location) url.searchParams.set("location", input.location);
+    await page.goto(url.toString(), {
+      waitUntil: "domcontentloaded",
+      timeout: 45_000
+    });
+    await page
+      .locator('a[href*="/jobs/view/"]')
+      .first()
+      .waitFor({
+        state: "visible",
+        timeout: 20_000
+      })
+      .catch(() => undefined);
+    const raw = await page
+      .locator('a[href*="/jobs/view/"]')
+      .evaluateAll((anchors) =>
+        anchors.map((anchor) => {
+          const card = anchor.closest("li") || anchor.parentElement;
+          return {
+            title: anchor.textContent || "",
+            location: card?.textContent || "",
+            link: (anchor as HTMLAnchorElement).href
+          };
+        })
+      );
+    return normalizeJobs(raw);
+  } finally {
+    // For a connected session, close disconnects this Worker while keeping the
+    // Browser Run session and its cookies alive for the next request.
+    await browser.close().catch(() => undefined);
+  }
 }
