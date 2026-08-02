@@ -1216,29 +1216,31 @@ export default function App() {
             "LinkedIn login is not configured on this deployment."
         );
       }
+      if (!liveViewWindow) {
+        throw new Error(
+          "The LinkedIn login window was blocked. Allow pop-ups for workinghelper.com and try again."
+        );
+      }
       if (liveViewWindow)
         liveViewWindow.location.href = payload.data.liveViewUrl;
       const startedAt = Date.now();
       const poll = window.setInterval(async () => {
         const authenticated = await refreshLinkedInStatus();
-        const popupClosed = Boolean(liveViewWindow?.closed);
         const timedOut = Date.now() - startedAt > 90_000;
-        if (authenticated === true || popupClosed || timedOut) {
+        if (authenticated === true || timedOut) {
           window.clearInterval(poll);
-          if (authenticated === true || timedOut) {
-            if (liveViewWindow && !liveViewWindow.closed)
-              liveViewWindow.close();
-            if (authenticated === true && !liveViewWindow)
-              window.open("", "aitherpath-linkedin-login")?.close();
-          }
-          setLinkedInStatus((current) => ({
-            ...current,
-            connecting: false,
-            error:
-              timedOut && authenticated !== true
-                ? "LinkedIn login was not detected. Please reconnect and try again."
-                : current.error
-          }));
+          if (authenticated === true && !liveViewWindow.closed)
+            liveViewWindow.close();
+          setLinkedInStatus(
+            authenticated === true
+              ? { authenticated: true, connecting: false }
+              : {
+                  authenticated: false,
+                  connecting: false,
+                  error:
+                    "LinkedIn login was not detected. Please reconnect and try again."
+                }
+          );
         }
       }, 3000);
     } catch (error) {
