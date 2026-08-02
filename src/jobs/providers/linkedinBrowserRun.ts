@@ -149,6 +149,7 @@ export async function getLinkedInBrowserSessionStatus(
     `/browser/${encodeURIComponent(sessionId)}/json/list?liveViewUrlExpiresInMs=3600000`
   );
   const target =
+    targets.find((item) => item.url && authenticatedUrl(item.url)) ||
     targets.find(
       (item) =>
         item.url && !/^about:blank$/i.test(item.url) && item.devtoolsFrontendUrl

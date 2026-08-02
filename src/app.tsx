@@ -1162,7 +1162,13 @@ export default function App() {
       const response = await fetch(linkedInStatusUrl);
       const payload = (await response.json()) as {
         data?: { authenticated?: boolean };
+        error?: { message?: string };
       };
+      if (!response.ok) {
+        throw new Error(
+          payload.error?.message || "Unable to inspect LinkedIn login status."
+        );
+      }
       const authenticated = Boolean(payload.data?.authenticated);
       setLinkedInStatus((current) => ({
         ...current,
@@ -1170,8 +1176,15 @@ export default function App() {
         error: undefined
       }));
       return authenticated;
-    } catch {
-      return false;
+    } catch (error) {
+      setLinkedInStatus((current) => ({
+        ...current,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to inspect LinkedIn login status."
+      }));
+      return null;
     }
   }, [linkedInStatusUrl]);
 
@@ -1201,7 +1214,11 @@ export default function App() {
       const startedAt = Date.now();
       const poll = window.setInterval(async () => {
         const authenticated = await refreshLinkedInStatus();
-        if (authenticated || Date.now() - startedAt > 5 * 60_000) {
+        if (
+          authenticated === true ||
+          authenticated === null ||
+          Date.now() - startedAt > 5 * 60_000
+        ) {
           window.clearInterval(poll);
           if (authenticated && liveViewWindow && !liveViewWindow.closed) {
             liveViewWindow.close();
