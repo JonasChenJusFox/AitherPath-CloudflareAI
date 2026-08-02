@@ -1192,16 +1192,20 @@ export default function App() {
             "LinkedIn login is not configured on this deployment."
         );
       }
-      window.open(
+      // Keep the popup handle so it can be closed as soon as login succeeds.
+      // This releases the Browser Run connection before the agent searches.
+      const liveViewWindow = window.open(
         payload.data.liveViewUrl,
-        "aitherpath-linkedin-login",
-        "noopener,noreferrer"
+        "aitherpath-linkedin-login"
       );
       const startedAt = Date.now();
       const poll = window.setInterval(async () => {
         const authenticated = await refreshLinkedInStatus();
         if (authenticated || Date.now() - startedAt > 5 * 60_000) {
           window.clearInterval(poll);
+          if (authenticated && liveViewWindow && !liveViewWindow.closed) {
+            liveViewWindow.close();
+          }
           setLinkedInStatus((current) => ({ ...current, connecting: false }));
         }
       }, 3000);
