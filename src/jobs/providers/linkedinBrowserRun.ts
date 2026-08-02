@@ -185,7 +185,40 @@ export async function searchLinkedInBrowserRun(
   }
 
   const { connect } = await browserRuntime();
-  const browser = await connect(env.BROWSER, sessionId);
+  let browser: Awaited<ReturnType<typeof connect>> | undefined;
+  let lastError: unknown;
+  // Live View owns the Browser Run WebSocket while the login window is open.
+  // Wait briefly for that connection to be released before the Worker connects.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      browser = await connect(env.BROWSER, sessionId);
+      break;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        !/accept|websocket|connection|browser/i.test(message) ||
+        attempt === 5
+      )
+        throw new ApiError(
+          "JOB_SEARCH_ERROR",
+          /accept|websocket/i.test(message)
+            ? "Browser Run is still releasing the LinkedIn Live View session. Close the login window, wait a few seconds, and retry."
+            : message,
+          502
+        );
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+  if (!browser) {
+    throw new ApiError(
+      "JOB_SEARCH_ERROR",
+      lastError instanceof Error
+        ? lastError.message
+        : "Unable to connect to the LinkedIn Browser Run session.",
+      502
+    );
+  }
   try {
     // Keep the Live View tab available for the user and search in a fresh tab.
     // This avoids racing the Live View CDP connection while preserving cookies.
