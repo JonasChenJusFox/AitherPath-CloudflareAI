@@ -1223,12 +1223,7 @@ export default function App() {
         const authenticated = await refreshLinkedInStatus();
         const popupClosed = Boolean(liveViewWindow?.closed);
         const timedOut = Date.now() - startedAt > 90_000;
-        if (
-          authenticated === true ||
-          authenticated === null ||
-          popupClosed ||
-          timedOut
-        ) {
+        if (authenticated === true || popupClosed || timedOut) {
           window.clearInterval(poll);
           if (authenticated === true || timedOut) {
             if (liveViewWindow && !liveViewWindow.closed)

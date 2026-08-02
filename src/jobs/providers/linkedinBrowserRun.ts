@@ -173,11 +173,13 @@ export async function searchLinkedInBrowserRun(
   env: Env,
   input: JobSearchInput
 ): Promise<JobSummary[]> {
-  const sessionId = input.linkedinSessionId || env.LINKEDIN_BROWSER_SESSION_ID;
+  // The session is bound to the authenticated user by ChatAgent. Do not fall
+  // back to a global session: that can reuse another user's stale browser.
+  const sessionId = input.linkedinSessionId;
   if (!sessionId) {
     throw new ApiError(
       "JOB_SEARCH_ERROR",
-      "Start a Browser Run LinkedIn session and configure LINKEDIN_BROWSER_SESSION_ID.",
+      "Connect LinkedIn first so this user has a persistent Browser Run session.",
       409
     );
   }

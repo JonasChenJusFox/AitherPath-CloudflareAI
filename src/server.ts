@@ -1133,7 +1133,7 @@ export default {
         const agent = env.ChatAgent.get(
           env.ChatAgent.idFromName(`linkedin:${owner}`)
         );
-        await agent.fetch(
+        const saved = await agent.fetch(
           new Request("https://workinghelper.com/internal/linkedin/session", {
             method: "PUT",
             headers: {
@@ -1143,6 +1143,13 @@ export default {
             body: JSON.stringify({ sessionId: session.sessionId })
           })
         );
+        if (!saved.ok) {
+          throw new ApiError(
+            "JOB_SEARCH_ERROR",
+            "Unable to bind the LinkedIn session to this user.",
+            502
+          );
+        }
         return successJson(session);
       } catch (error) {
         return errorJson(
