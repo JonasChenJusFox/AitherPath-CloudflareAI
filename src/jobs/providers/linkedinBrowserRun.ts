@@ -183,22 +183,16 @@ export async function searchLinkedInBrowserRun(
 
   const { connect } = await browserRuntime();
   const browser = await connect(env.BROWSER, sessionId);
-  const pages = browser.contexts()[0]?.pages() || [];
-  const page =
-    pages.find((candidate) => /linkedin\.com/i.test(candidate.url())) ||
-    pages.find((candidate) => !/^about:blank$/i.test(candidate.url())) ||
-    pages[0] ||
-    (await browser.newPage());
+  // Keep the Live View tab available for the user and search in a fresh tab.
+  // This avoids racing the Live View CDP connection while preserving its cookies.
+  const page = await browser.newPage();
+  await page
+    .goto("https://www.linkedin.com/feed/", {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000
+    })
+    .catch(() => undefined);
   if (!authenticated(page)) {
-    await page
-      .goto("https://www.linkedin.com/feed/", {
-        waitUntil: "domcontentloaded",
-        timeout: 30_000
-      })
-      .catch(() => undefined);
-  }
-  if (!authenticated(page)) {
-    await browser.close();
     throw new ApiError(
       "JOB_SEARCH_ERROR",
       "Complete LinkedIn login in the Browser Run Live Session, then retry.",
@@ -233,6 +227,5 @@ export async function searchLinkedInBrowserRun(
         };
       })
     );
-  await browser.close();
   return normalizeJobs(raw);
 }
