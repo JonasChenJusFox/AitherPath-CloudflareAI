@@ -1161,7 +1161,7 @@ export default function App() {
     try {
       const response = await fetch(linkedInStatusUrl);
       const payload = (await response.json()) as {
-        data?: { authenticated?: boolean };
+        data?: { authenticated?: boolean; url?: string | null };
         error?: { message?: string };
       };
       if (!response.ok) {
@@ -1169,7 +1169,12 @@ export default function App() {
           payload.error?.message || "Unable to inspect LinkedIn login status."
         );
       }
-      const authenticated = Boolean(payload.data?.authenticated);
+      const authenticated = Boolean(
+        payload.data?.authenticated ||
+        /linkedin\.com\/(feed|jobs|mynetwork|messaging|in)\b/i.test(
+          payload.data?.url || ""
+        )
+      );
       setLinkedInStatus((current) => ({
         ...current,
         authenticated,
@@ -1220,8 +1225,11 @@ export default function App() {
           Date.now() - startedAt > 5 * 60_000
         ) {
           window.clearInterval(poll);
-          if (authenticated && liveViewWindow && !liveViewWindow.closed) {
-            liveViewWindow.close();
+          if (authenticated === true) {
+            if (liveViewWindow && !liveViewWindow.closed)
+              liveViewWindow.close();
+            // Fall back to the named popup if the browser returned no handle.
+            window.open("", "aitherpath-linkedin-login")?.close();
           }
           setLinkedInStatus((current) => ({ ...current, connecting: false }));
         }
