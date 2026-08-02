@@ -44,17 +44,17 @@ export function createJobsTools(context: AgentToolContext) {
       description:
         "Search jobs through configured providers. Jooble is the default. Use LinkedIn only after the server-configured Browser Run session has been manually logged in. Results are read-only; never fabricate listings.",
       inputSchema: jobSearchToolSchema,
-      execute: async ({ keywords, location, sources, linkedinSessionId }) => {
+      execute: async ({ keywords, location, sources }) => {
         const effectiveSources =
           sources ||
           (/\blinkedin\b/i.test(context.latestUserText)
             ? (["jooble", "linkedin"] as const)
             : undefined);
-        const activeLinkedInSessionId =
-          linkedinSessionId ||
-          (effectiveSources?.includes("linkedin")
-            ? await context.getLinkedInSessionId?.()
-            : undefined);
+        // Session IDs are account-scoped server state. Never let a value typed
+        // in chat override the session bound by the Connect LinkedIn flow.
+        const activeLinkedInSessionId = effectiveSources?.includes("linkedin")
+          ? await context.getLinkedInSessionId?.()
+          : undefined;
         return safeToolExecution(
           () =>
             searchAcrossProviders(context.env, {
