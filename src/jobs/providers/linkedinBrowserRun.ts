@@ -186,14 +186,7 @@ export async function searchLinkedInBrowserRun(
   const browser = await connect(env.BROWSER, sessionId);
   // Keep the Live View tab available for the user and search in a fresh tab.
   // This avoids racing the Live View CDP connection while preserving its cookies.
-  const context = browser.contexts()[0];
-  if (!context) {
-    throw new ApiError(
-      "JOB_SEARCH_ERROR",
-      "The LinkedIn Browser Run session has no browser context. Start a new LinkedIn session and retry.",
-      409
-    );
-  }
+  const context = browser.contexts()[0] || (await browser.newContext());
   const page = await context.newPage();
   await page
     .goto("https://www.linkedin.com/feed/", {
