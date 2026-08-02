@@ -1195,6 +1195,12 @@ export default function App() {
 
   const connectLinkedIn = useCallback(async () => {
     setLinkedInStatus({ authenticated: false, connecting: true });
+    // Open synchronously from the user click so browsers grant us a closeable
+    // popup handle after the asynchronous session-creation request completes.
+    const liveViewWindow = window.open(
+      "about:blank",
+      "aitherpath-linkedin-login"
+    );
     try {
       const response = await fetch(
         `/api/linkedin/connect/start?name=${encodeURIComponent(userId)}`,
@@ -1210,12 +1216,8 @@ export default function App() {
             "LinkedIn login is not configured on this deployment."
         );
       }
-      // Keep the popup handle so it can be closed as soon as login succeeds.
-      // This releases the Browser Run connection before the agent searches.
-      const liveViewWindow = window.open(
-        payload.data.liveViewUrl,
-        "aitherpath-linkedin-login"
-      );
+      if (liveViewWindow)
+        liveViewWindow.location.href = payload.data.liveViewUrl;
       const startedAt = Date.now();
       const poll = window.setInterval(async () => {
         const authenticated = await refreshLinkedInStatus();
@@ -1245,6 +1247,7 @@ export default function App() {
         }
       }, 3000);
     } catch (error) {
+      if (liveViewWindow && !liveViewWindow.closed) liveViewWindow.close();
       setLinkedInStatus({
         authenticated: false,
         connecting: false,
