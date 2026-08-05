@@ -220,9 +220,28 @@ export async function searchLinkedInBrowserRun(
     );
   }
   try {
-    // Keep the Live View tab available for the user and search in a fresh tab.
-    // This avoids racing the Live View CDP connection while preserving cookies.
-    const context = browser.contexts()[0] || (await browser.newContext());
+    // Reuse the context created for the Browser Run Live View. Creating a new
+    // context here would create an isolated profile without LinkedIn cookies.
+    const contexts = browser.contexts();
+    if (contexts.length === 0) {
+      throw new ApiError(
+        "JOB_SEARCH_ERROR",
+        "The LinkedIn Browser Run session has no reusable browser context.",
+        409
+      );
+    }
+    const context = contexts[0];
+    const cookies = await context.cookies("https://www.linkedin.com");
+    const linkedinCookies = cookies.filter((cookie) =>
+      cookie.domain.toLowerCase().includes("linkedin.com")
+    );
+    if (linkedinCookies.length === 0) {
+      throw new ApiError(
+        "JOB_SEARCH_ERROR",
+        "LinkedIn cookies were not found in the connected Browser Run context. Complete login in the same Live View session, then retry.",
+        409
+      );
+    }
     const page = await context.newPage();
     await page
       .goto("https://www.linkedin.com/feed/", {
