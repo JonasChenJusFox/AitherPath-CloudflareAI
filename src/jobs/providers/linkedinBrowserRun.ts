@@ -144,12 +144,26 @@ export async function getLinkedInBrowserSessionStatus(
   env: Env,
   sessionId: string
 ) {
-  const targets = await browserApi<BrowserTarget[]>(
-    env,
-    `/browser/${encodeURIComponent(sessionId)}/json/list?liveViewUrlExpiresInMs=3600000`
-  );
+  let targets: BrowserTarget[] = [];
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    targets = await browserApi<BrowserTarget[]>(
+      env,
+      `/browser/${encodeURIComponent(sessionId)}/json/list?liveViewUrlExpiresInMs=3600000`
+    );
+    const authenticatedTarget = targets.find(
+      (item) => item.url && authenticatedUrl(item.url)
+    );
+    if (authenticatedTarget) {
+      return {
+        sessionId,
+        authenticated: true,
+        url: authenticatedTarget.url || null,
+        liveViewUrl: authenticatedTarget.devtoolsFrontendUrl || null
+      };
+    }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
   const target =
-    targets.find((item) => item.url && authenticatedUrl(item.url)) ||
     targets.find(
       (item) =>
         item.url && !/^about:blank$/i.test(item.url) && item.devtoolsFrontendUrl
@@ -158,7 +172,7 @@ export async function getLinkedInBrowserSessionStatus(
     targets[0];
   return {
     sessionId,
-    authenticated: Boolean(target?.url && authenticatedUrl(target.url)),
+    authenticated: false,
     url: target?.url || null,
     liveViewUrl: target?.devtoolsFrontendUrl || null
   };

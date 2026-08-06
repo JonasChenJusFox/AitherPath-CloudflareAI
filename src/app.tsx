@@ -1159,7 +1159,9 @@ export default function App() {
 
   const refreshLinkedInStatus = useCallback(async () => {
     try {
-      const response = await fetch(linkedInStatusUrl);
+      const response = await fetch(`${linkedInStatusUrl}&t=${Date.now()}`, {
+        cache: "no-store"
+      });
       const payload = (await response.json()) as {
         data?: { authenticated?: boolean; url?: string | null };
         error?: { message?: string };
