@@ -208,8 +208,13 @@ export async function searchLinkedInBrowserRun(
       // connectOverCDP enables the persistent/default context used by the
       // Browser Run Live View. The plain Workers connect() path can expose
       // zero contexts, which would hide the Live View's LinkedIn cookies.
-      const endpoint = endpointURLString(env.BROWSER, { sessionId });
-      browser = await chromium.connectOverCDP(endpoint);
+      const endpoint = new URL(endpointURLString(env.BROWSER, { sessionId }));
+      // @cloudflare/playwright uses the browser_session query marker to
+      // distinguish connecting to an existing Browser Run session from
+      // launching a new one. Without it, connectOverCDP() acquires a fresh
+      // browser and cannot see the Live View session's LinkedIn cookies.
+      endpoint.searchParams.set("browser_session", sessionId);
+      browser = await chromium.connectOverCDP(endpoint.toString());
       break;
     } catch (error) {
       lastError = error;
