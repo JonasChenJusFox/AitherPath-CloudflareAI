@@ -184,14 +184,18 @@ export async function searchLinkedInBrowserRun(
     );
   }
 
-  const { connect } = await browserRuntime();
+  const { chromium, endpointURLString, connect } = await browserRuntime();
   let browser: Awaited<ReturnType<typeof connect>> | undefined;
   let lastError: unknown;
   // Live View owns the Browser Run WebSocket while the login window is open.
   // Wait briefly for that connection to be released before the Worker connects.
   for (let attempt = 0; attempt < 6; attempt += 1) {
     try {
-      browser = await connect(env.BROWSER, sessionId);
+      // connectOverCDP enables the persistent/default context used by the
+      // Browser Run Live View. The plain Workers connect() path can expose
+      // zero contexts, which would hide the Live View's LinkedIn cookies.
+      const endpoint = endpointURLString(env.BROWSER, { sessionId });
+      browser = await chromium.connectOverCDP(endpoint);
       break;
     } catch (error) {
       lastError = error;
