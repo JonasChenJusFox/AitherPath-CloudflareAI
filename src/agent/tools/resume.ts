@@ -7,6 +7,13 @@ import {
 import { safeToolExecution } from "../toolErrors";
 import type { AgentToolContext } from "../types";
 
+export function normalizeFileData(fileData: string) {
+  // The browser sends a data URL. The OpenAI Responses adapter expects the
+  // base64 payload only and adds the media-type prefix itself.
+  const match = fileData.match(/^data:[^;,]+;base64,(.*)$/s);
+  return match?.[1] || fileData;
+}
+
 export const saveResumeProfileSchema = resumeProfileSchema
   .extend({ sourceName: z.string().trim().max(240).optional() })
   .strict();
@@ -72,7 +79,7 @@ export async function parseResumeText(
                 },
                 {
                   type: "file" as const,
-                  data: input.fileData,
+                  data: normalizeFileData(input.fileData),
                   mediaType: input.mediaType,
                   filename: input.fileName
                 }

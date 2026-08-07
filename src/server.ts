@@ -941,18 +941,40 @@ If there is no durable profile fact, return an empty memories array.`,
           url.pathname === "/internal/week3/resume/parse" &&
           request.method === "POST"
         ) {
-          const input = resumeParseRequestSchema.parse(await request.json());
-          const model = createAgentModel(this.env, this.sessionAffinity);
-          const profile = await parseResumeText(
-            model.model,
-            model.providerOptions,
-            input
-          );
-          const saved = await this.saveSharedResumeProfile(
-            profile,
-            input.fileName
-          );
-          return successJson({ profile: saved }, { status: 201 });
+          try {
+            const input = resumeParseRequestSchema.parse(await request.json());
+            const model = createAgentModel(this.env, this.sessionAffinity);
+            const profile = await parseResumeText(
+              model.model,
+              model.providerOptions,
+              input
+            );
+            const saved = await this.saveSharedResumeProfile(
+              profile,
+              input.fileName
+            );
+            return successJson({ profile: saved }, { status: 201 });
+          } catch (error) {
+            console.error("Resume parsing failed", error);
+            if (error instanceof z.ZodError) {
+              return errorJson(
+                new ApiError(
+                  "VALIDATION_ERROR",
+                  "The resume upload is invalid. Please upload a readable PDF.",
+                  400
+                ),
+                requestId
+              );
+            }
+            return errorJson(
+              new ApiError(
+                "INTERNAL_ERROR",
+                "Resume parsing failed. Please try a smaller, text-readable PDF.",
+                502
+              ),
+              requestId
+            );
+          }
         }
 
         return errorJson(
