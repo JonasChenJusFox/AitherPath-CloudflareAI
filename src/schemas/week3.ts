@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { timeZoneSchema as validTimeZoneSchema } from "../agent/time";
+import {
+  resumeProfileSchema,
+  resumeParseRequestSchema
+} from "../resume/schema";
 
 const timeZoneSchema = validTimeZoneSchema.default("UTC");
 const boundedText = (max: number) => z.string().trim().min(1).max(max);
@@ -56,6 +60,12 @@ export const memoryPostSchema = z.object({
     .regex(/^[a-zA-Z0-9:_-]{1,80}$/),
   value: z.string().trim().min(1).max(2000)
 });
+
+export const resumeProfilePostSchema = resumeProfileSchema
+  .extend({ sourceName: z.string().trim().max(240).optional() })
+  .strict();
+
+export { resumeParseRequestSchema };
 
 export function parseSearchParams<T extends z.ZodType>(
   schema: T,

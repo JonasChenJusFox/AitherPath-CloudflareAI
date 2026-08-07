@@ -6,6 +6,8 @@ import { createJobsTools } from "./tools/jobs";
 import { createMemoryTools } from "./tools/memory";
 import { createWorkflowTools } from "./tools/workflow";
 import { createWeatherTools } from "./tools/weather";
+import { createResumeTools } from "./tools/resume";
+import { createEvaluationTools } from "./tools/evaluation";
 
 export function createToolRegistry(context: AgentToolContext) {
   return {
@@ -15,7 +17,9 @@ export function createToolRegistry(context: AgentToolContext) {
     ...createContactsTools(context),
     ...createMemoryTools(context),
     ...createWorkflowTools(context),
-    ...createWeatherTools(context)
+    ...createWeatherTools(context),
+    ...createResumeTools(context),
+    ...createEvaluationTools(context)
   };
 }
 

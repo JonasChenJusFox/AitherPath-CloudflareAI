@@ -23,7 +23,12 @@ import {
   streamText
 } from "ai";
 import { z } from "zod";
-import { memoryPostSchema, preferencesPatchSchema } from "./schemas/week3";
+import {
+  memoryPostSchema,
+  preferencesPatchSchema,
+  resumeParseRequestSchema,
+  resumeProfilePostSchema
+} from "./schemas/week3";
 import { ApiError, errorJson, getRequestId, successJson } from "./utils/api";
 import {
   createAgentModel,
@@ -44,6 +49,9 @@ import {
 import type { MemoryEntry } from "./agent/types";
 import { extractTimeZone } from "./agent/time";
 import { indexMemory, retrieveRelevantMemories } from "./agent/memoryRag";
+import { indexResumeProfile } from "./resume/rag";
+import type { ResumeProfile } from "./resume/types";
+import { parseResumeText } from "./agent/tools/resume";
 import type { ScheduleMeetingWorkflowParams } from "./workflows/scheduleMeeting";
 import {
   createCalendarEvent,
@@ -212,6 +220,100 @@ export class ChatAgent extends AIChatAgent<Env> {
         updated_at INTEGER NOT NULL
       )
     `;
+
+    this.sql`
+      CREATE TABLE IF NOT EXISTS resume_profiles (
+        id TEXT PRIMARY KEY,
+        profile_json TEXT NOT NULL,
+        source_name TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `;
+  }
+
+  private getResumeProfileLocal(): ResumeProfile | null {
+    this.ensureWeek3Tables();
+    const rows = this.sql<{ profile_json: string }>`
+      SELECT profile_json FROM resume_profiles WHERE id = ${"default"} LIMIT 1
+    `;
+    if (!rows[0]) return null;
+    try {
+      return JSON.parse(rows[0].profile_json) as ResumeProfile;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveResumeProfileLocal(profile: ResumeProfile, sourceName?: string) {
+    this.ensureWeek3Tables();
+    const existing = this.sql<{ created_at: number }>`
+      SELECT created_at FROM resume_profiles WHERE id = ${"default"} LIMIT 1
+    `;
+    const now = Date.now();
+    this.sql`
+      INSERT OR REPLACE INTO resume_profiles (
+        id, profile_json, source_name, created_at, updated_at
+      ) VALUES (
+        ${"default"}, ${JSON.stringify(profile)}, ${sourceName || null},
+        ${existing[0]?.created_at || now}, ${now}
+      )
+    `;
+    return profile;
+  }
+
+  private resumeOwnerName() {
+    return this.memoryOwnerName || this.name || "anonymous";
+  }
+
+  private async getSharedResumeProfile() {
+    if (!this.memoryOwnerName) return this.getResumeProfileLocal();
+    const agent = this.env.ChatAgent.get(
+      this.env.ChatAgent.idFromName(`resume:${this.memoryOwnerName}`)
+    );
+    const response = await agent.fetch(
+      new Request("https://workinghelper.com/internal/week3/resume/profile", {
+        headers: { "X-WorkingHelper-Internal": "week3" }
+      })
+    );
+    const payload = await response.json<{
+      data?: { profile?: ResumeProfile | null };
+    }>();
+    return payload.data?.profile || null;
+  }
+
+  private async saveSharedResumeProfile(
+    profile: ResumeProfile,
+    sourceName?: string
+  ) {
+    if (!this.memoryOwnerName) {
+      const saved = this.saveResumeProfileLocal(profile, sourceName);
+      await indexResumeProfile(this.env, this.resumeOwnerName(), saved).catch(
+        () => false
+      );
+      return saved;
+    }
+    const agent = this.env.ChatAgent.get(
+      this.env.ChatAgent.idFromName(`resume:${this.memoryOwnerName}`)
+    );
+    const response = await agent.fetch(
+      new Request("https://workinghelper.com/internal/week3/resume/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-WorkingHelper-Internal": "week3"
+        },
+        body: JSON.stringify({ ...profile, sourceName })
+      })
+    );
+    const payload = await response.json<{
+      data?: { profile?: ResumeProfile };
+    }>();
+    const saved = payload.data?.profile || profile;
+    await indexResumeProfile(this.env, this.memoryOwnerName, saved).catch(
+      () => false
+    );
+    return saved;
   }
 
   private getLinkedInSessionId() {
@@ -813,6 +915,46 @@ If there is no durable profile fact, return an empty memories array.`,
           return successJson(await this.upsertMemory(request), { status: 201 });
         }
 
+        if (
+          url.pathname === "/internal/week3/resume/profile" &&
+          request.method === "GET"
+        ) {
+          return successJson({ profile: this.getResumeProfileLocal() });
+        }
+
+        if (
+          url.pathname === "/internal/week3/resume/profile" &&
+          (request.method === "PUT" || request.method === "POST")
+        ) {
+          const input = resumeProfilePostSchema.parse(await request.json());
+          const { sourceName, ...profile } = input;
+          const saved = this.saveResumeProfileLocal(profile, sourceName);
+          await indexResumeProfile(
+            this.env,
+            this.resumeOwnerName(),
+            saved
+          ).catch(() => false);
+          return successJson({ profile: saved }, { status: 201 });
+        }
+
+        if (
+          url.pathname === "/internal/week3/resume/parse" &&
+          request.method === "POST"
+        ) {
+          const input = resumeParseRequestSchema.parse(await request.json());
+          const model = createAgentModel(this.env, this.sessionAffinity);
+          const profile = await parseResumeText(
+            model.model,
+            model.providerOptions,
+            input
+          );
+          const saved = await this.saveSharedResumeProfile(
+            profile,
+            input.fileName
+          );
+          return successJson({ profile: saved }, { status: 201 });
+        }
+
         return errorJson(
           new ApiError("VALIDATION_ERROR", "Unsupported storage route.", 404),
           requestId
@@ -935,6 +1077,10 @@ If there is no durable profile fact, return an empty memories array.`,
       },
       getGoogleAccessToken: () => this.getGmailAccessToken(),
       saveMemory: (key, value) => this.saveSharedMemoryValue(key, value),
+      getResumeProfile: () => this.getSharedResumeProfile(),
+      saveResumeProfile: (profile, sourceName) =>
+        this.saveSharedResumeProfile(profile, sourceName),
+      getResumeOwnerName: () => this.resumeOwnerName(),
       startMeetingWorkflow: (params) => this.startMeetingWorkflow(params),
       pendingActions
     });

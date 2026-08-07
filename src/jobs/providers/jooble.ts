@@ -6,6 +6,8 @@ type JoobleJob = {
   company?: string;
   location?: string;
   link?: string;
+  snippet?: string;
+  description?: string;
 };
 type JoobleResponse = { jobs?: JoobleJob[] };
 
@@ -33,6 +35,7 @@ export async function searchJooble(
     company: job.company || "Unknown company",
     location: job.location || "Unknown location",
     link: job.link || "",
-    source: "jooble"
+    source: "jooble",
+    description: job.snippet || job.description || undefined
   }));
 }

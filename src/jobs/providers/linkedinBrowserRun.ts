@@ -80,7 +80,12 @@ function authenticated(page: { url(): string }) {
 }
 
 function normalizeJobs(
-  raw: Array<{ title?: string; location?: string; link: string }>
+  raw: Array<{
+    title?: string;
+    location?: string;
+    link: string;
+    description?: string;
+  }>
 ) {
   const seen = new Set<string>();
   const jobs: JobSummary[] = [];
@@ -95,7 +100,8 @@ function normalizeJobs(
       company: "",
       location: clean(item.location),
       link,
-      source: "linkedin"
+      source: "linkedin",
+      description: clean(item.description) || undefined
     });
     if (jobs.length >= 20) break;
   }
@@ -303,6 +309,7 @@ export async function searchLinkedInBrowserRun(
           return {
             title: anchor.textContent || "",
             location: card?.textContent || "",
+            description: card?.textContent || "",
             link: (anchor as HTMLAnchorElement).href
           };
         })

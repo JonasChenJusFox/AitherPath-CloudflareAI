@@ -12,7 +12,7 @@
 - Company: **AitherPath**
 - Repository: **AitherPath-CloudflareAI**
 
-The assistant uses OpenAI as its primary model provider, with Workers AI available as an explicit fallback. It supports typed tools, durable profile memory with OpenAI Embeddings and Cloudflare Vectorize, approval-gated external writes, and retryable calendar workflows.
+The assistant uses OpenAI as its primary model provider, with Workers AI available as an explicit fallback. It supports typed tools, durable profile memory with OpenAI Embeddings and Cloudflare Vectorize, structured resume matching, approval-gated external writes, and retryable calendar workflows.
 
 ## Deployment URLs
 
@@ -80,6 +80,25 @@ Find frontend engineer jobs in New York
 
 The model can decide to call `searchJobs`, receive job results from Jooble, and summarize them in the chat.
 
+### Resume RAG and job evaluation
+
+The Week 3 matching flow uses the existing Cloudflare Vectorize binding rather than a second vector database:
+
+```text
+PDF resume
+→ OpenAI structured extraction
+→ Durable Object SQLite: resume_profiles (source of truth)
+→ OpenAI Embeddings
+→ Vectorize namespace: resume:google:<subject>
+→ searchJobs evaluations
+→ deterministic score and evidence
+→ Apply only when score > 80; otherwise Skip
+```
+
+Logged-in users can select **Upload resume PDF** in the sidebar. The Worker parses the file, stores the structured profile, and indexes skills, projects, education, and experience. Job searches automatically include evaluations when a profile is available. The score is a recommendation gate only; the assistant never submits an application automatically.
+
+The same flow is available to an authenticated client through `POST /api/resume/parse` with `{ fileData, mediaType, fileName }`, or through `GET/PUT /api/resume/profile` for an already structured profile. `MEMORY_INDEX` is shared with personal-memory RAG but isolated by Vectorize namespace.
+
 ## Project Structure
 
 ```text
@@ -91,6 +110,7 @@ The model can decide to call `searchJobs`, receive job results from Jooble, and 
 │   ├── routes/        # Direct HTTP API routes
 │   ├── schemas/       # Zod validation schemas
 │   ├── storage/       # Session and storage helpers
+│   ├── resume/        # Structured resume schema and Vectorize indexing
 │   ├── types/         # Shared TypeScript types
 │   ├── utils/         # Shared API response and error helpers
 │   ├── server.ts      # ChatAgent composition, storage, and Worker routes

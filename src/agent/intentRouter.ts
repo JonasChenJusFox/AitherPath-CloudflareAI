@@ -1,5 +1,8 @@
 export const AGENT_TOOL_NAMES = [
   "searchJobs",
+  "getResumeProfile",
+  "saveResumeProfile",
+  "evaluateJobMatch",
   "listGmailInbox",
   "sendGmailEmail",
   "listTodayCalendarEvents",
@@ -23,6 +26,16 @@ export function selectActiveTools(message: string): AgentToolName[] {
     /\b(job|jobs|internship|internships|role|roles|opening|hiring)\b/.test(text)
   ) {
     selected.add("searchJobs");
+    selected.add("getResumeProfile");
+    selected.add("evaluateJobMatch");
+  }
+  if (
+    /\b(resume|cv|curriculum vitae|skills|experience|education|upload)\b/.test(
+      text
+    )
+  ) {
+    selected.add("getResumeProfile");
+    selected.add("saveResumeProfile");
   }
   if (/\b(inbox|email|emails|gmail|mail)\b/.test(text)) {
     selected.add("listGmailInbox");

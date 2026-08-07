@@ -13,6 +13,7 @@ export type JobSummary = {
   location: string;
   link: string;
   source: JobSource;
+  description?: string;
 };
 
 export type ProviderStatus = {

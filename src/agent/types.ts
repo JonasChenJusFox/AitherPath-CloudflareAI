@@ -1,5 +1,6 @@
 import type { PendingActionService } from "./pendingActions";
 import type { ScheduleMeetingWorkflowParams } from "../workflows/scheduleMeeting";
+import type { ResumeProfile } from "../resume/types";
 
 export type ToolErrorCode =
   | "CONFIGURATION_ERROR"
@@ -37,6 +38,12 @@ export type AgentToolContext = {
   getLinkedInSessionId?: () => Promise<string | null>;
   getGoogleAccessToken: () => Promise<string | null>;
   saveMemory: (key: string, value: string) => Promise<MemoryEntry>;
+  getResumeProfile?: () => Promise<ResumeProfile | null>;
+  saveResumeProfile?: (
+    profile: ResumeProfile,
+    sourceName?: string
+  ) => Promise<ResumeProfile>;
+  getResumeOwnerName?: () => string;
   startMeetingWorkflow?: (
     params: ScheduleMeetingWorkflowParams
   ) => Promise<string>;

@@ -961,6 +961,8 @@ type SidebarContentProps = {
   disconnectGmail: () => void;
   linkedInStatus: LinkedInStatus;
   connectLinkedIn: () => void;
+  uploadResume: (file: File) => Promise<void>;
+  resumeStatus: string;
 };
 
 function SidebarContent({
@@ -980,8 +982,11 @@ function SidebarContent({
   deleteReview,
   disconnectGmail,
   linkedInStatus,
-  connectLinkedIn
+  connectLinkedIn,
+  uploadResume,
+  resumeStatus
 }: SidebarContentProps) {
+  const resumeInputRef = useRef<HTMLInputElement>(null);
   return (
     <>
       <div className="p-4 border-b border-kumo-line">
@@ -1087,6 +1092,32 @@ function SidebarContent({
       </div>
 
       <div className="p-3 border-t border-kumo-line">
+        <input
+          ref={resumeInputRef}
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          aria-label="Upload PDF resume"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void uploadResume(file);
+          }}
+        />
+        <Button
+          variant="secondary"
+          onClick={() => resumeInputRef.current?.click()}
+          className="w-full justify-center mb-3"
+        >
+          Upload resume PDF
+        </Button>
+        {resumeStatus && (
+          <div className="mb-3">
+            <Text size="xs" variant="secondary">
+              {resumeStatus}
+            </Text>
+          </div>
+        )}
         <Button
           variant="secondary"
           onClick={connectLinkedIn}
@@ -1150,6 +1181,7 @@ export default function App() {
     authenticated: false,
     connecting: false
   });
+  const [resumeStatus, setResumeStatus] = useState("");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -1296,6 +1328,45 @@ export default function App() {
     }));
     setEntryMode("welcome");
   }, []);
+
+  const uploadResume = useCallback(
+    async (file: File) => {
+      if (!gmailStatus.connected) {
+        setResumeStatus("Log in with Google before uploading a resume.");
+        return;
+      }
+      if (file.type !== "application/pdf") {
+        setResumeStatus("Please select a PDF resume.");
+        return;
+      }
+      setResumeStatus("Extracting and indexing your resume...");
+      try {
+        const dataUri = await fileToDataUri(file);
+        const response = await fetch("/api/resume/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileData: dataUri,
+            mediaType: file.type,
+            fileName: file.name
+          })
+        });
+        const payload = (await response.json()) as {
+          data?: { profile?: unknown };
+          error?: { message?: string };
+        };
+        if (!response.ok || !payload.data?.profile) {
+          throw new Error(payload.error?.message || "Resume parsing failed.");
+        }
+        setResumeStatus("Resume saved and indexed for job matching.");
+      } catch (error) {
+        setResumeStatus(
+          error instanceof Error ? error.message : "Resume parsing failed."
+        );
+      }
+    },
+    [gmailStatus.connected]
+  );
 
   const createNewChat = useCallback(() => {
     const review = createEmptyReview();
@@ -1450,6 +1521,8 @@ export default function App() {
                 disconnectGmail={disconnectGmail}
                 linkedInStatus={linkedInStatus}
                 connectLinkedIn={connectLinkedIn}
+                uploadResume={uploadResume}
+                resumeStatus={resumeStatus}
               />
             </aside>
           </div>
@@ -1474,6 +1547,8 @@ export default function App() {
             disconnectGmail={disconnectGmail}
             linkedInStatus={linkedInStatus}
             connectLinkedIn={connectLinkedIn}
+            uploadResume={uploadResume}
+            resumeStatus={resumeStatus}
           />
         </aside>
 

@@ -1,4 +1,5 @@
 import { getGoogleSession, appendCookies } from "../auth/googleSession";
+import { getGoogleIdentity } from "../auth/googleOAuth";
 import {
   createCalendarEvent,
   listCalendarEvents,
@@ -47,6 +48,26 @@ async function forwardToUserStorage(
   );
 }
 
+async function forwardToStableOwnerStorage(
+  env: Env,
+  owner: string,
+  request: Request,
+  path: string
+) {
+  const url = new URL(request.url);
+  url.pathname = path;
+  const headers = new Headers(request.headers);
+  headers.set("X-WorkingHelper-Internal", "week3");
+  const agent = env.ChatAgent.get(env.ChatAgent.idFromName(owner));
+  return agent.fetch(
+    new Request(url.toString(), {
+      method: request.method,
+      headers,
+      body: request.method === "GET" ? null : request.body
+    })
+  );
+}
+
 async function withGoogleAuth(
   request: Request,
   env: Env,
@@ -87,7 +108,8 @@ export async function handleWeek3Routes(request: Request, env: Env) {
     !url.pathname.startsWith("/api/calendar") &&
     !url.pathname.startsWith("/api/contacts") &&
     !url.pathname.startsWith("/api/preferences") &&
-    !url.pathname.startsWith("/api/memory")
+    !url.pathname.startsWith("/api/memory") &&
+    !url.pathname.startsWith("/api/resume")
   ) {
     return null;
   }
@@ -157,6 +179,40 @@ export async function handleWeek3Routes(request: Request, env: Env) {
           "/internal/week3/memory"
         )
       );
+    }
+
+    if (url.pathname === "/api/resume/profile") {
+      return await withGoogleAuth(request, env, async (session) => {
+        const identity = await getGoogleIdentity(session.accessToken).catch(
+          () => null
+        );
+        const owner = identity?.sub
+          ? `resume:google:${identity.sub}`
+          : `google:${session.email.toLowerCase()}`;
+        return forwardToStableOwnerStorage(
+          env,
+          owner,
+          request,
+          "/internal/week3/resume/profile"
+        );
+      });
+    }
+
+    if (url.pathname === "/api/resume/parse" && request.method === "POST") {
+      return await withGoogleAuth(request, env, async (session) => {
+        const identity = await getGoogleIdentity(session.accessToken).catch(
+          () => null
+        );
+        const owner = identity?.sub
+          ? `resume:google:${identity.sub}`
+          : `google:${session.email.toLowerCase()}`;
+        return forwardToStableOwnerStorage(
+          env,
+          owner,
+          request,
+          "/internal/week3/resume/parse"
+        );
+      });
     }
 
     return errorJson(
