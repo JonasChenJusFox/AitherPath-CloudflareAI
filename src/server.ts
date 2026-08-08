@@ -51,7 +51,7 @@ import { extractTimeZone } from "./agent/time";
 import { indexMemory, retrieveRelevantMemories } from "./agent/memoryRag";
 import { indexResumeProfile } from "./resume/rag";
 import type { ResumeProfile } from "./resume/types";
-import { parseResumeText } from "./agent/tools/resume";
+import { parseResumeText, ResumeParseError } from "./agent/tools/resume";
 import type { ScheduleMeetingWorkflowParams } from "./workflows/scheduleMeeting";
 import {
   createCalendarEvent,
@@ -943,16 +943,24 @@ If there is no durable profile fact, return an empty memories array.`,
         ) {
           try {
             const input = resumeParseRequestSchema.parse(await request.json());
-            const model = createAgentModel(this.env, this.sessionAffinity);
-            const profile = await parseResumeText(
-              model.model,
-              model.providerOptions,
-              input
-            );
-            const saved = await this.saveSharedResumeProfile(
-              profile,
-              input.fileName
-            );
+            const profile = await parseResumeText(this.env, input);
+            let saved: ResumeProfile;
+            try {
+              saved = await this.saveSharedResumeProfile(
+                profile,
+                input.fileName
+              );
+            } catch (error) {
+              console.error("Resume profile storage failed", error);
+              return errorJson(
+                new ApiError(
+                  "STORAGE_ERROR",
+                  "The resume was parsed, but the profile could not be saved.",
+                  500
+                ),
+                requestId
+              );
+            }
             return successJson({ profile: saved }, { status: 201 });
           } catch (error) {
             console.error("Resume parsing failed", error);
@@ -966,10 +974,16 @@ If there is no durable profile fact, return an empty memories array.`,
                 requestId
               );
             }
+            if (error instanceof ResumeParseError) {
+              return errorJson(
+                new ApiError("INTERNAL_ERROR", error.message, error.statusCode),
+                requestId
+              );
+            }
             return errorJson(
               new ApiError(
                 "INTERNAL_ERROR",
-                "Resume parsing failed. Please try a smaller, text-readable PDF.",
+                "Resume parsing failed. Please try a smaller, text-readable PDF or try again later.",
                 502
               ),
               requestId
